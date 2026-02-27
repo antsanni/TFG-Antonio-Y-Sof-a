@@ -1,0 +1,91 @@
+
+// ESTO ES EL LANZAR_DRONES
+
+echo "--- LANZADOR DE DRONES ---"
+echo "Introduce el numero de drones que quieres utilizar:"
+read NUM_DRONES
+
+#Limpiamos si habia algo
+pkill -f sim_vehicle.py
+pkill -f arducopter
+
+cd ~/ardupilot || exit 1
+
+for (( i=0; i<NUM_DRONES; i++ ))
+do
+
+    OFFSET=$(echo "0.0001 * $i" | bc)
+    LAT=$(echo "28.761800 + $OFFSET" | bc)
+
+    echo " -> Dron $i listo (En puerto $i)"
+
+    #Comando que pone todo en marcha
+    nohup python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f quad --no-mavproxy --instance $i --sysid $(($i+1)) --custom-location=$LAT,-17.741078,0,0 > /dev/null 2>&1 &
+
+    sleep 5
+done
+
+echo "---------------------------------------"
+echo "¡Drones listos!"
+echo "---------------------------------------"
+
+
+// COMANDOS
+
+su - antosilver
+
+// LANZAR FLOTA DRONES TCP CON EL COMANDO NUEVO
+
+./lanzar_drones.sh
+
+// LANZAR PRIMER DRON CON COMANDO AUTOMATIZADO
+
+./setup_commands.sh
+
+python3 sim_vehicle.py -v ArduCopter -f quad --console --map --wipe --custom-location=28.761638,-17.741078,0,0 --instance 0 --sysid 1 --out=udp:192.168.1.34:14550
+
+// LANZAR DRONES MANUAL SIN COMANDO AUTOMATIZADO
+
+cd ardupilot
+
+python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f quad --console --map --wipe --custom-location=28.761800,-17.741078,0,0 --instance 1 --sysid 2 --out=udp:192.168.1.34:14560
+python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f quad --console --map --wipe --custom-location=28.761800,-17.741078,0,0 --instance 1 --sysid 2
+
+python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f quad --console --map --wipe --custom-location=28.761900,-17.741078,0,0 --instance 2 --sysid 3 --out=udp:192.168.1.34:14570
+python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f quad --console --map --wipe --custom-location=28.761900,-17.741078,0,0 --instance 2 --sysid 3 
+
+
+
+
+// LANZAR DRONES ANTIGUO UDP QUE NO CONECTA AL SERVIDOR
+
+
+echo "Introduce el numero de drones que quieres utilizar:"
+read NUM_DRONES
+
+pkill -f sim_vehicle.py
+pkill -f arducopter
+
+# Bucle para lanzar cada dron
+for (( i=0; i<NUM_DRONES; i++ )):
+do
+    echo "HOLAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    # Calculamos el puerto (14550 + 10*i)
+    PUERTO=$((14550 + i*10))
+    
+    # Calculamos una posición distinta para cada uno (para que no choquen)
+    # Los ponemos en fila separada por unos metros
+    OFFSET=$(echo "0.0001 * $i" | bc)
+    LAT=$(echo "28.761800 + $OFFSET" | bc)
+
+    echo "Lanzando Dron $i en puerto $PUERTO (Lat: $LAT)..."
+    
+    # COMANDO DE LANZAMIENTO
+    cd ~/ardupilot
+    # python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f quad --instance $i --sysid $(($i+1)) --out=udp:0.0.0.0:$PUERTO --custom-location=$LAT,-17.741078,0,0 > /dev/null 2>&1 &
+    python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f quad --console --map --wipe --custom-location=$LAT,-17.741078,0,0 --instance $i --sysid $(($i+1)) --out=udp:192.168.1.34:$PUERTO &
+    nohup python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f quad --no-mavproxy -A "--out=udp:192.168.1.34:$PUERTO" --custom-location=$LAT,-17.741078,0,0 --instance $i --sysid $(($i+1)) > /dev/null 2>&1 &
+
+    echo "ADIOSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS"
+    sleep 3
+done
