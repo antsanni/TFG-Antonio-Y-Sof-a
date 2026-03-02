@@ -4,29 +4,34 @@ using Newtonsoft.Json;
 using System.Linq;
 using System.Collections.Generic;
 
-// Cliente WebSocket para intercambio de telemetría/comandos con el servidor (DroneKit)
-public class DroneWSClient : MonoBehaviour
-{
-    private WebSocket ws;
+/// <summary>
+/// Cliente WebSocket para intercambio de telemetría/comandos con el servidor (DroneKit)
+/// </summary>
+public class DroneWSClient : MonoBehaviour {
+
+    #region Variables y Referencias
+    private WebSocket ws; // Referencia al WebSocket
 
     [Header("Info Display")]
-    public TMPro.TextMeshProUGUI infoTextL;
-    public TMPro.TextMeshProUGUI infoTextR;
+    [SerializeField] private TMPro.TextMeshProUGUI infoTextL; // Texto de altitud
+    [SerializeField] private TMPro.TextMeshProUGUI infoTextR; // Texto de nivel de batería
 
     [Header("WebSocket Settings")]
-    public string serverUrl = "ws://localhost:8765";
+    [SerializeField] private string serverUrl = "ws://localhost:8765"; // Url y puerto del WebSocket 
 
     [Header("Referencias")]
-    public GameObject dronePrefab;
+    [SerializeField]
+    private GameObject dronePrefab; // Prefab del dron (Para instanciar en escena)
 
     [Header("Mapbox")]
-    public Mapbox.Unity.Map.AbstractMap map;
+    [SerializeField] private Mapbox.Unity.Map.AbstractMap map; // Referencia al mapa
 
-    private Dictionary<int, GameObject> dronesActivos = new Dictionary<int, GameObject>();
+    private Dictionary<int, GameObject> dronesActivos = new Dictionary<int, GameObject>(); // Diccionario para llevar el control de los drones activos en la escena (ID (único) -> Instancia de PrefabDron)
 
-    private List<DroneData> datosRecibidosPendientes = null;
-    private readonly object candado = new object();
+    private List<DroneData> datosRecibidosPendientes = null; // Lista de drones recibidos pero aún no procesados (buzón entre el hilo del WebSocket y el Update de Unity)
+    private readonly object candado = new object(); // Cerrojo para acceder a la lista de datos recibidos de forma segura entre hilos
 
+    // Información sobre el dron (variables públicas para que sean accesibles desde scripts externos)
     [Header("Drone Data")]
     public float latitude;
     public float longitude;
@@ -39,112 +44,159 @@ public class DroneWSClient : MonoBehaviour
     public float batteryEtaMin;
     public string flightMode;
     public bool isArmed;
+    #endregion
 
-    // Waypoint simple para misiones
+    #region Estructuras auxiliares
+    /// <summary>
+    /// Waypoint simple para misiones
+    /// </summary>
     [System.Serializable]
-    public class MissionWaypoint
-    {
-        public double lat;
-        public double lon;
-        public double alt;
+    public class MissionWaypoint {
+        public double lat; // latitud
+        public double lon; // longitud
+        public double alt; // altura sobre el suelo (en metros)
 
-        public MissionWaypoint(double lat, double lon, double alt)
-        {
+        /// <summary>
+        /// Constructora. Se asume que la altitud es relativa al suelo (AGL) y se convertirá a absoluta (AMSL) en el servidor usando la elevación del mapa.
+        /// </summary>
+        /// <param name="lat">Latitud</param>
+        /// <param name="lon">Longitud</param>
+        /// <param name="alt">Altura sobre el suelo (en metros)</param>
+        /// <returns>
+        /// Objeto de tipo MissionWaypoint con los datos proporcionados.
+        /// </returns>
+        public MissionWaypoint(double lat, double lon, double alt) {
             this.lat = lat;
             this.lon = lon;
             this.alt = alt;
         }
     }
 
-    // Inicializa y conecta el WebSocket
-    private void Start()
-    {
+    // Estructuras para deserializar la telemetría
+
+    /// <summary>
+    /// Estructura de datos de la batería (voltaje, corriente, nivel y tiempo estimado restante)
+    /// </summary>
+    /// <param name="voltage"> Voltaje </param>
+    /// <param name="current"> Corriente </param>
+    /// <param name="level"> Nivel de batería </param>
+    /// <param name="eta_min"> Tiempo estimado restante </param>
+    [System.Serializable]
+    public class BatteryData {
+        public float voltage;
+        public float current;
+        public float level;
+        public float? eta_min;
+    }
+
+    /// <summary>
+    /// Estructura de datos del dron (latitud, longitud, altitud, rumbo e ID único)
+    /// </summary>
+    /// <param name="latitud"> Latitud </param>
+    /// <param name="longitud"> Longitud </param>
+    /// <param name="altitud"> Altitud </param>
+    /// <param name="rumbo"> Rumbo </param>
+    /// <param name="id"> // Identicficador único (para el diccionario de drones activos) </param>
+    [System.Serializable]
+    public class DroneData {
+        public float latitud;
+        public float longitud;
+        public float altitud;
+        public float rumbo;
+        public int id; 
+        /*public float yaw;
+        public float groundspeed;
+        public BatteryData battery;
+        public bool armed;
+        public string mode;*/
+
+    }
+    #endregion
+
+    /// <summary>
+    /// Inicializa y conecta el WebSocket
+    /// </summary>
+    private void Start() {
         Connect();
     }
 
-    // Actualiza UI básica con la telemetría
-    private void Update()
-    {
-        // 1. Actualizar textos (como antes)
+    /// <summary>
+    /// Actualiza UI básica con la telemetría
+    /// </summary>
+    private void Update() {
+        // Actualiza la UI (si las referencias están puestas en el Inspector -> no son nulas)
         if (infoTextL != null) infoTextL.text = $"Alt: {altitude:F1} m";
         if (infoTextR != null) infoTextR.text = $"Bat: {batteryLevel:F0}%";
 
-        // 2. PROCESAR DATOS PENDIENTES (La lógica de los drones)
+        // Porcesa los datos recibidos del WebSocket (si los hay) de forma segura
         List<DroneData> datosParaProcesar = null;
-
-        // Sacamos los datos del "buzón" de forma segura
-        lock (candado)
-        {
-            if (datosRecibidosPendientes != null)
-            {
+        lock (candado) {
+            if (datosRecibidosPendientes != null) {
                 datosParaProcesar = new List<DroneData>(datosRecibidosPendientes);
                 datosRecibidosPendientes = null; // Vaciamos el buzón
             }
         }
 
-        // Si había datos, los procesamos (Crear y Mover)
-        if (datosParaProcesar != null)
-        {
+        // Muestra los datos procesados en la escena (crear/mover drones, actualizar variables serializadas para ver en el inspector, etc.)
+        if (datosParaProcesar != null) {
             ProcesarDrones(datosParaProcesar);
         }
     }
 
-    // Esta función hace el trabajo sucio (Instantiate, Move, etc.)
-    private void ProcesarDrones(List<DroneData> dataList)
-    {
-        // --- DEBUG: Comprobamos si el mapa está puesto ---
-        if (map == null) 
-        {
+    /// <summary>
+    /// Procesa la lista de drones pendientes (recibidos del WebSocket pero aún no procesados)
+    /// -> Crea nuevos drones si hay IDs nuevos, mueve los drones existentes a su nueva posición y rota según el rumbo.
+    /// </summary>
+    private void ProcesarDrones(List<DroneData> dataList) {
+        // Si el mapa no está asignado, no podemos calcular posiciones -> se muestra un error
+        // El resto del script seguirá funcionando, pero no se mostrarán los drones en el mapa
+        if (map == null) {
             Debug.LogError("❌ [UNITY ERROR] ¡No has arrastrado el MAPA a la casilla del script!");
             return;
         }
 
-        foreach (DroneData dron in dataList)
-        {
-            // A) ¿Es nuevo? -> Lo creamos
-            if (!dronesActivos.ContainsKey(dron.id))
-            {
-                // --- DEBUG: Avisamos que hemos visto un ID nuevo ---
+        // Procesa cada dron recibido en la lista
+        foreach (DroneData dron in dataList) {
+            // Crea el dron en caso de que no exista
+            if (!dronesActivos.ContainsKey(dron.id)) {
                 Debug.Log($"🏭 [UNITY] Detectado Nuevo Dron ID: {dron.id}. Intentando crear...");
 
-                if (dronePrefab != null)
-                {
+                // Instancia el prefab (siempre que esté asignada la referencia en el Inspector)
+                if (dronePrefab != null) {
                     GameObject nuevoDron = Instantiate(dronePrefab);
                     nuevoDron.name = "Dron_" + dron.id;
-                    dronesActivos.Add(dron.id, nuevoDron);
-                    
-                    // --- DEBUG: Confirmamos creación ---
+                    dronesActivos.Add(dron.id, nuevoDron); // Se añade el dron a la lista de drones activos (ID -> GameObject)
+
                     Debug.Log($"✅ [UNITY] ¡Dron {dron.id} CREADO CORRECTAMENTE en la escena!");
                 }
-                else
-                {
+                else {
                     Debug.LogError("❌ [UNITY ERROR] ¡Falta asignar el 'Drone Prefab' en el Inspector!");
                     continue;
                 }
             }
 
-            // B) Recuperamos el objeto
+            // Accede al objeto (Instancia del prefab de dron)
             GameObject dronAActualizar = dronesActivos[dron.id];
 
-            // C) Calculamos posición en el mapa
+            // Calculo de la posición en Unity a partir de la latitud y longitud usando Mapbox
             var mapPos = new Mapbox.Utils.Vector2d(dron.latitud, dron.longitud);
             Vector3 pos = map.GeoToWorldPosition(mapPos);
 
-            // D) Altura
+            // Calcula la altura del suelo en esa posición usando el mapa de Mapbox y ajuste de la altura del dron en consecuencia (altitud recibida + altura del suelo)
             float alturaSuelo = map.QueryElevationInUnityUnitsAt(mapPos);
             pos.y = alturaSuelo + dron.altitud;
 
-            // E) Mover y Rotar
-            // Usamos Lerp para que sea suave (opcional, pero queda mejor)
+            // Movimiento del dron en la escena (usando Lerp para suavizar el movimiento)
             dronAActualizar.transform.position = Vector3.Lerp(dronAActualizar.transform.position, pos, Time.deltaTime * 10f);
 
+            // Rotacióin del dron según el rumbo recibido (solo rota en el eje Y, manteniendo la rotación en X y Z)
             Vector3 rotacionActual = dronAActualizar.transform.rotation.eulerAngles;
             dronAActualizar.transform.rotation = Quaternion.Euler(rotacionActual.x, dron.rumbo, rotacionActual.z);
         }
 
-        // Actualizamos las variables públicas solo para ver algo en el inspector (del primero)
-        if (dataList.Count > 0)
-        {
+        // Actualiza las variables serializadas -> se pueden ver en el Inspector de Unity para debuggear o usarlas desde otros scripts
+        // (como DroneMapController para mostrar la posición del dron principal)
+        if (dataList.Count > 0) {
             var data = dataList[0];
             this.latitude = data.latitud;
             this.longitude = data.longitud;
@@ -153,98 +205,103 @@ public class DroneWSClient : MonoBehaviour
         }
     }
 
-    // Cierra y limpia la conexión al destruir el objeto
-    private void OnDestroy()
-    {
-        if (ws != null)
-        {
-            // Desuscribir para evitar callbacks tras destruir el objeto
+    /// <summary>
+    /// Cierra y limpia la conexión al destruir el objeto
+    /// </summary>
+    private void OnDestroy() {
+        if (ws != null) {
+            // Desuscribe los eventos para evitar callbacks tras destruir el objeto
             ws.OnOpen -= OnWsOpen;
             ws.OnMessage -= OnWsMessage;
             ws.OnError -= OnWsError;
             ws.OnClose -= OnWsClose;
 
-            try { ws.Close(); } catch { /* noop */ }
+            try { ws.Close(); } catch { }
             ws = null;
         }
     }
 
-    // Conecta al servidor WebSocket
-    private void Connect()
-    {
-        if (string.IsNullOrWhiteSpace(serverUrl))
-        {
+    /// <summary>
+    /// Conecta al servidor WebSocket
+    /// </summary>
+    private void Connect() {
+        // Compueba que la URL no esté vacía o sea solo espacios
+        if (string.IsNullOrWhiteSpace(serverUrl)) {
             Debug.LogError("URL de servidor WebSocket inválida.");
             return;
         }
 
-        if (ws != null)
-        {
+        // Si ya hay una conexión abierta o en proceso, no hace nada, si no está abierta ni en proceso, pero existe, trata de cerrarla 
+        if (ws != null) {
             if (ws.ReadyState == WebSocketState.Open || ws.ReadyState == WebSocketState.Connecting)
                 return;
 
-            try { ws.Close(); } catch { /* noop */ }
+            try { ws.Close(); } catch { }
             ws = null;
         }
 
+        // Crea conexión con el Sevidor WebSocket a través de la URL configurada
         ws = new WebSocket(serverUrl);
 
+        // Gestiona los eventos del WebSocket (apertura, mensaje recibido -> JSON, error y cierre)
         ws.OnOpen += OnWsOpen;
         ws.OnMessage += OnWsMessage;
         ws.OnError += OnWsError;
         ws.OnClose += OnWsClose;
 
+        // Intenta conectar (asíncrono, no bloquea el hilo principal de Unity)
         ws.ConnectAsync();
     }
 
-    // Evento: conexión abierta
-    private void OnWsOpen(object sender, System.EventArgs e)
-    {
+    /// <summary>
+    /// Evento: apertura de nueva conexión WebSocket (conexión establecida con el servidor)
+    /// </summary>
+    private void OnWsOpen(object sender, System.EventArgs e) {
         Debug.Log("🟢 [UNITY] Conectado al servidor WebSocket.");
     }
 
-    // Evento: mensaje entrante (JSON de telemetría)
-    private void OnWsMessage(object sender, MessageEventArgs e)
-    {
+    /// <summary>
+    /// Evento: mensaje recibido del servidor WebSocket (telemetría de los drones -> JSON)
+    /// </summary>
+    private void OnWsMessage(object sender, MessageEventArgs e) {
         if (!e.IsText) return;
 
-        // --- DEBUG: Ver qué llega exactamente (puede llenar mucho la consola) ---
+        // Muestra la información de telemetría recibida (puede llenar mucho la consola)
         Debug.Log("📩 [UNITY] Recibido JSON: " + e.Data);
 
-        try
-        {
-            // 1. Solo deserializamos los datos
+        try {
+            // Deserializa los datos recibidos -> JSON a una lista de objetos DroneData
             List<DroneData> incomingList = JsonConvert.DeserializeObject<List<DroneData>>(e.Data);
-            
-            // 2. Los metemos en el "buzón" (Thread Safe)
-            lock (candado)
-            {
+
+            // Almacena los datos en datosRecibidosPendientes de forma segura, para gestionarlos más adelante en el Update
+            lock (candado) {
                 datosRecibidosPendientes = incomingList;
             }
         }
-        catch (System.Exception ex)
-        {
+        catch (System.Exception ex) {
             Debug.LogError("💥 [UNITY ERROR] Error parseando JSON: " + ex.Message);
         }
     }
 
-    // Evento: error en el socket
-    private void OnWsError(object sender, ErrorEventArgs e)
-    {
+    /// <summary>
+    /// Evento: error en el socket
+    /// </summary>
+    private void OnWsError(object sender, ErrorEventArgs e) {
         Debug.LogError("🔴 [UNITY ERROR] en WebSocket: " + e.Message);
     }
 
-    // Evento: conexión cerrada
-    private void OnWsClose(object sender, CloseEventArgs e)
-    {
+    /// <summary>
+    /// Evento: conexión cerrada
+    /// </summary>
+    private void OnWsClose(object sender, CloseEventArgs e) {
         Debug.Log("🔸 [UNITY] Conexión cerrada: " + e.Reason);
     }
 
-    // Envía comando de velocidad
-    public void SendSetSpeed(float speed)
-    {
-        if (!IsOpen())
-        {
+    /// <summary>
+    /// Envía comando de velocidad
+    /// </summary>
+    public void SendSetSpeed(float speed) {
+        if (!IsOpen()) {
             Debug.LogWarning("WebSocket no conectado. No se puede enviar velocidad.");
             return;
         }
@@ -254,11 +311,11 @@ public class DroneWSClient : MonoBehaviour
         Debug.Log($"Enviada nueva velocidad: {speed} m/s");
     }
 
-    // Envía una misión (lista de WPs)
-    public void SendMission(IEnumerable<MissionWaypoint> waypoints)
-    {
-        if (!IsOpen())
-        {
+    /// <summary>
+    /// Envía una misión (lista de WayPoints)
+    /// </summary>
+    public void SendMission(IEnumerable<MissionWaypoint> waypoints) {
+        if (!IsOpen()) {
             Debug.LogWarning("WebSocket no conectado. No se puede enviar la misión.");
             return;
         }
@@ -268,11 +325,11 @@ public class DroneWSClient : MonoBehaviour
         Debug.Log($"Enviada misión con {waypoints.Count()} waypoints al servidor.");
     }
 
-    // Fija home en el servidor (DroneKit)
-    public void SendSetHome(double lat, double lon, double alt = 0)
-    {
-        if (!IsOpen())
-        {
+    /// <summary>
+    /// Fija la base con los datos de latitud, longitud y altura recibidos por parámetro
+    /// </summary>
+    public void SendSetHome(double lat, double lon, double alt = 0) {
+        if (!IsOpen()) {
             Debug.LogWarning("WebSocket no conectado. No se puede fijar la base.");
             return;
         }
@@ -282,11 +339,11 @@ public class DroneWSClient : MonoBehaviour
         Debug.Log($"Enviado set_home -> ({lat:F6}, {lon:F6}, alt {alt} m).");
     }
 
-    // Ordena Return-To-Launch
-    public void SendReturnToLaunch()
-    {
-        if (!IsOpen())
-        {
+    /// <summary>
+    /// Ordena a los drones que vuelvan a la base (Return-To-Launch)
+    /// </summary>
+    public void SendReturnToLaunch() {
+        if (!IsOpen()) {
             Debug.LogWarning("WebSocket no conectado. No se puede enviar RTL.");
             return;
         }
@@ -296,11 +353,11 @@ public class DroneWSClient : MonoBehaviour
         Debug.Log("Enviado return_to_launch.");
     }
 
-    // Ajusta nivel de batería simulado
-    public void SendSetBatteryLevel(float level)
-    {
-        if (!IsOpen())
-        {
+    /// <summary>
+    /// Ajusta nivel de batería simulado al nivel recibido por parámetro (entre 0 y 100)
+    /// </summary>
+    public void SendSetBatteryLevel(float level) {
+        if (!IsOpen()) {
             Debug.LogWarning("WebSocket no conectado. No se puede actualizar batería.");
             return;
         }
@@ -311,11 +368,11 @@ public class DroneWSClient : MonoBehaviour
         Debug.Log($"Enviado nivel de batería simulado: {level}%");
     }
 
-    // Reanuda misión desde índice guardado
-    public void SendResumeMission()
-    {
-        if (!IsOpen())
-        {
+    /// <summary>
+    /// Reanuda misión (desde índice guardado -> punto en el que se había quedado previamente)
+    /// </summary>
+    public void SendResumeMission() {
+        if (!IsOpen()) {
             Debug.LogWarning("WebSocket no conectado. No se puede reanudar la misión.");
             return;
         }
@@ -325,35 +382,10 @@ public class DroneWSClient : MonoBehaviour
         Debug.Log("Enviado resume mission.");
     }
 
-    // Comprueba si el socket está abierto
-    private bool IsOpen()
-    {
+    /// <returns>
+    /// True si el socket existe y está abierto
+    /// </returns>
+    private bool IsOpen() {
         return ws != null && ws.ReadyState == WebSocketState.Open;
     }
-}
-
-// Estructuras para deserializar la telemetría
-[System.Serializable]
-public class BatteryData
-{
-    public float voltage;
-    public float current;
-    public float level;
-    public float? eta_min;
-}
-
-[System.Serializable]
-public class DroneData
-{
-    public float latitud;
-    public float longitud;
-    public float altitud;
-    public float rumbo;
-    public int id;
-    /*public float yaw;
-    public float groundspeed;
-    public BatteryData battery;
-    public bool armed;
-    public string mode;*/
-    
 }
