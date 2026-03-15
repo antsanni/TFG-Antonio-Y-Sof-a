@@ -3,11 +3,18 @@ using System.Collections;
 
 public class BatteryManager : MonoBehaviour
 {
-    public DroneWSClient droneClient;
+    private DroneWSClient droneClient;
     public float batteryThreshold = 15f;
     public float batteryLevel;
     public bool isCharging = false;
     public bool isRTLInProgress = false;
+    private void Start() {
+        droneClient = FindAnyObjectByType<DroneWSClient>();
+        //droneClient = GetComponent<DroneWSClient>();
+        if (droneClient == null) {
+            Debug.LogError("BatteryManager: No se encontró el componente DroneWSClient.");
+        }
+    }
 
     void Update()
     {

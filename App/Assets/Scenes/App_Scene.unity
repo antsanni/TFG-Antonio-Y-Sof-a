@@ -2407,7 +2407,7 @@ GameObject:
   - component: {fileID: 1133199188}
   m_Layer: 5
   m_Name: CanvasIcons
-  m_TagString: Untagged
+  m_TagString: CanvasIcons
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -2519,7 +2519,7 @@ GameObject:
   - component: {fileID: 1158412478}
   m_Layer: 0
   m_Name: DroneManager
-  m_TagString: Untagged
+  m_TagString: DronManager
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -4776,7 +4776,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 11400bb510d89b440b5079a701380244, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  droneClient: {fileID: 1158412477}
   batteryThreshold: 25
   batteryLevel: 0
   isCharging: 0
