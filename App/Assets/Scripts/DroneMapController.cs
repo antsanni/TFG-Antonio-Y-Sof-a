@@ -4,7 +4,7 @@ using Mapbox.Utils;
 using System.Collections.Generic;
 
 public class DroneMapController : MonoBehaviour
-{
+{/*
     public AbstractMap map;
     public GameObject droneMarker;
     public DroneWSClient wsClient;
@@ -100,5 +100,5 @@ public class DroneMapController : MonoBehaviour
         t = Mathf.Clamp01(t);
         Vector2 proyeccion = a + t * ab;
         return Vector2.Distance(p, proyeccion);
-    }
+    }*/
 }

@@ -1,51 +1,46 @@
 ﻿using UnityEngine;
 using System.Collections;
 
-public class BatteryManager : MonoBehaviour
-{
-    private DroneWSClient droneClient;
+public class BatteryManager : MonoBehaviour {
     public float batteryThreshold = 15f;
     public float batteryLevel;
     public bool isCharging = false;
     public bool isRTLInProgress = false;
-    private void Start() {
-        droneClient = FindAnyObjectByType<DroneWSClient>();
-        //droneClient = GetComponent<DroneWSClient>();
-        if (droneClient == null) {
-            Debug.LogError("BatteryManager: No se encontró el componente DroneWSClient.");
-        }
+
+    private DroneController _droneController;
+
+    void Update() {
+        batteryUpdate();
     }
 
-    void Update()
-    {
-        batteryLevel = droneClient.batteryLevel;
+    private void batteryUpdate() {
+        DroneWSClient.BatteryData batteryData = _droneController.wsClient.GetBatteryData(_droneController.myId);
+        batteryLevel = batteryData.level;
 
-        bool droneFlying = droneClient.isArmed &&
-                           droneClient.altitude > 2f &&
-                           droneClient.flightMode != "RTL";
+        bool droneFlying = batteryData.isArmed &&
+                           batteryData.altitude > 2f &&
+                           batteryData.flightMode != "RTL";
 
         if (!isCharging && !isRTLInProgress && batteryLevel <= batteryThreshold && droneFlying)
         {
             Debug.Log("Batería baja. Iniciando RTL.");
             isRTLInProgress = true;
-            droneClient.SendReturnToLaunch();
+            _droneController.Command_ReturnToLaunch();
             StartCoroutine(HandleBatteryRecharge());
         }
     }
+    IEnumerator HandleBatteryRecharge() {
+        DroneWSClient.BatteryData batteryData = _droneController.wsClient.GetBatteryData(_droneController.myId);
 
-    IEnumerator HandleBatteryRecharge()
-    {
         Debug.Log("Esperando a que el dron inicie el RTL...");
 
-        while (droneClient.flightMode != "RTL" && droneClient.flightMode != "LAND")
-        {
+        while (batteryData.flightMode != "RTL" && batteryData.flightMode != "LAND") {
             yield return new WaitForSeconds(0.5f);
         }
 
         Debug.Log("Esperando a que el dron aterrice...");
 
-        while (droneClient.isArmed || droneClient.altitude > 1.0f)
-        {
+        while (batteryData.isArmed || batteryData.altitude > 1.0f) {
             yield return new WaitForSeconds(1f);
         }
 
@@ -53,25 +48,24 @@ public class BatteryManager : MonoBehaviour
 
         isCharging = true;
 
-        float startingBattery = droneClient.batteryLevel;
+        float startingBattery = batteryData.level;
         float duration = 60f;
         float timer = 0f;
 
-        while (timer < duration)
-        {
+        while (timer < duration) {
             float simulatedBattery = Mathf.Lerp(startingBattery, 100f, timer / duration);
-            droneClient.batteryLevel = simulatedBattery;
+            batteryData.level = simulatedBattery;
             timer += Time.deltaTime;
             yield return null;
         }
 
-        droneClient.batteryLevel = 100f;
+        batteryData.level = 100f;
         isCharging = false;
         isRTLInProgress = false;
 
-        droneClient.SendSetBatteryLevel(100f);
+        _droneController.Command_SetBattery(100f);
 
         Debug.Log("Carga completa. Relanzando misión.");
-        droneClient.SendResumeMission();
+        _droneController.Command_ResumeMission();
     }
 }

@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.Linq;
 
 public class ZoneSelector : MonoBehaviour
-{
+{/*
     [Header("DroneWSClient")]
     public DroneWSClient client;
 
@@ -607,5 +607,5 @@ public class ZoneSelector : MonoBehaviour
 
     // Convierte Path64 a lista de Vector2 usando escala
     private static List<Vector2> ToVector2(Path64 p, double s)
-        => p.Select(q => new Vector2((float)(q.X / s), (float)(q.Y / s))).ToList();
+        => p.Select(q => new Vector2((float)(q.X / s), (float)(q.Y / s))).ToList();*/
 }
