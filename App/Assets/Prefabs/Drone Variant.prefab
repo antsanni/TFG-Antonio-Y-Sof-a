@@ -103,6 +103,12 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 5327675118803221068, guid: 58b170600d32dab459fabd2eb55cd98e, type: 3}
       insertIndex: -1
       addedObject: {fileID: 8817323606400496207}
+    - targetCorrespondingSourceObject: {fileID: 5327675118803221068, guid: 58b170600d32dab459fabd2eb55cd98e, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 451146101487693114}
+    - targetCorrespondingSourceObject: {fileID: 5327675118803221068, guid: 58b170600d32dab459fabd2eb55cd98e, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 2967699423274939638}
     - targetCorrespondingSourceObject: {fileID: 5414305845502044850, guid: 58b170600d32dab459fabd2eb55cd98e, type: 3}
       insertIndex: -1
       addedObject: {fileID: 8650926136944094076}
@@ -156,8 +162,38 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 11400bb510d89b440b5079a701380244, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  droneClient: {fileID: 0}
   batteryThreshold: 25
   batteryLevel: 0
   isCharging: 0
   isRTLInProgress: 0
+--- !u!114 &451146101487693114
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5337251239670512898}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a90d990f25f1c9a49a25b1acf15af7e6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  myId: 0
+  wsClient: {fileID: 0}
+--- !u!114 &2967699423274939638
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5337251239670512898}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b8c2fc97820887346835cfe8b9917678, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  DesiredSpeedTxt: {fileID: 0}
+  currentSpeed: 5
+  STEP: 5
+  MIN_SPEED: 1
+  MAX_SPEED: 20
