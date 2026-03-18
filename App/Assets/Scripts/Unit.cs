@@ -8,8 +8,7 @@ public class Unit : MonoBehaviour
 
     UnitIndicator indicatorInstance;
 
-    void Start()
-    {
+    void Start() {
         //iconsCanvas = FindObjectOfType<Canvas>();
         iconsCanvas = GameObject.Find("CanvasIcons");
         if (iconsCanvas == null) Debug.Log("Canvas no encontrado");
@@ -18,8 +17,7 @@ public class Unit : MonoBehaviour
         indicatorInstance.target = transform;
     }
 
-    void OnDestroy()
-    {
+    void OnDestroy() {
         if (indicatorInstance) Destroy(indicatorInstance.gameObject);
     }
 }

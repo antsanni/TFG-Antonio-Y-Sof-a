@@ -132,9 +132,43 @@ public class DroneWSClient : MonoBehaviour {
     /// Actualiza UI básica con la telemetría
     /// </summary>
     private void Update() {
+
+        if (Input.GetKeyDown(KeyCode.Space))  {
+            Debug.Log("🚀 [TECLADO] Enviando misión de despegue al Dron 5760...");
+            EnviarMisionDePrueba(5760); // Mandamos volar al Dron 1
+        }
         // Actualiza la UI (si las referencias están puestas en el Inspector -> no son nulas)
-        if (infoTextL != null) infoTextL.text = $"Alt: {altitude:F1} m";
-        if (infoTextR != null) infoTextR.text = $"Bat: {batteryLevel:F0}%";
+        //if (infoTextL != null) infoTextL.text = $"Alt: {altitude:F1} m";
+        //if (infoTextR != null) infoTextR.text = $"Bat: {batteryLevel:F0}%";
+        if (infoTextL != null)
+        {
+            string textoDashboard = ""; // Aquí construiremos la lista de texto
+
+            // Recorremos todos los drones de los que tenemos datos guardados
+            foreach (var kvp in ultimaDataDrones)
+            {
+                int dronId = kvp.Key;
+                DroneData data = kvp.Value;
+
+                // Aplicamos tu fórmula: (5760-5760)/10 = 0. Le sumamos 1 para que empiece en Dron 1
+                int numeroDron = ((dronId - 5760) / 10) + 1;
+
+                // Indicador visual de si está armado
+                string armadoIcono = data.isArmed ? "🟢" : "🔴";
+
+                // Añadimos la información de este dron a la lista (con \n para saltar de línea)
+                textoDashboard += $"<b>Dron {numeroDron}</b> {armadoIcono} | Alt: {data.altitud:F1}m | Bat: {data.level:F0}% | Modo: {data.flightMode}\n";
+            }
+
+            // Imprimimos el texto final en la pantalla
+            infoTextL.text = textoDashboard;
+        }
+
+        // Dejamos infoTextR libre o lo vaciamos si no lo usamos por ahora
+        if (infoTextR != null)
+        {
+            infoTextR.text = $"Drones Activos: {ultimaDataDrones.Count}";
+        }
 
         // Porcesa los datos recibidos del WebSocket (si los hay) de forma segura
         List<DroneData> datosParaProcesar = null;
@@ -149,6 +183,41 @@ public class DroneWSClient : MonoBehaviour {
         if (datosParaProcesar != null) {
             ProcesarDrones(datosParaProcesar);
         }
+    }
+
+    /// <summary>
+    /// Genera una misión en forma de cuadrado alrededor del dron y se la envía
+    /// </summary>
+    public void EnviarMisionDePrueba(int droneId)
+    {
+        if (!IsOpen())
+        {
+            Debug.LogWarning("WebSocket no conectado.");
+            return;
+        }
+
+        if (!ultimaDataDrones.ContainsKey(droneId))
+        {
+            Debug.LogWarning("Aún no tenemos la posición del dron para calcular la misión.");
+            return;
+        }
+
+        // Cogemos donde está el dron ahora mismo
+        DroneData data = ultimaDataDrones[droneId];
+        double lat = data.latitud;
+        double lon = data.longitud;
+
+        // Creamos un cuadrado de waypoints desplazando un poquito la lat/lon
+        // Altura = 15 metros
+        var wps = new List<MissionWaypoint> {
+            new MissionWaypoint(lat + 0.0005, lon, 15),
+            new MissionWaypoint(lat, lon + 0.0005, 15),
+            new MissionWaypoint(lat - 0.0005, lon, 15),
+            new MissionWaypoint(lat, lon - 0.0005, 15)
+        };
+
+        // Enviamos la misión al servidor Python
+        SendMission(droneId, wps);
     }
 
     /// <summary>
@@ -322,10 +391,28 @@ public class DroneWSClient : MonoBehaviour {
     }
 
     /// <summary>
+    /// Envía comando de velocidad de todos los drones
+    /// </summary>
+    public void SendSetSpeed(float speed) {
+        if (!IsOpen()) {
+            Debug.LogWarning("WebSocket no conectado. No se puede enviar velocidad.");
+            return;
+        }
+
+        foreach (int droneId in dronesActivos.Keys) {
+            var payload = new { command = "set_speed", id = droneId, speed = speed };
+            ws.Send(JsonConvert.SerializeObject(payload));
+        }
+
+        Debug.Log($"Enviada nueva velocidad: {speed} m/s a todos los drones");
+    }
+
+    /// <summary>
     /// Envía comando de velocidad
     /// </summary>
-    public void SendSetSpeed(int droneId, float speed) {
-        if (!IsOpen()) {
+    public void SendSetSpeed(int droneId, float speed)  {
+        if (!IsOpen())
+        {
             Debug.LogWarning("WebSocket no conectado. No se puede enviar velocidad.");
             return;
         }
@@ -376,7 +463,7 @@ public class DroneWSClient : MonoBehaviour {
         foreach(int droneId in dronesActivos.Keys){
             var payload = new { command = "return_to_launch", id = droneId };
             ws.Send(JsonConvert.SerializeObject(payload));
-            Debug.Log($"[Dron {droneId}] Enviada orden RTL (Return To Launch).");
+            Debug.Log($"[Dron {droneId}] Enviada orden RTL (Return To Launch)."); 
         }
     }
 

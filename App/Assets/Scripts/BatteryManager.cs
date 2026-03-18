@@ -9,6 +9,10 @@ public class BatteryManager : MonoBehaviour {
 
     private DroneController _droneController;
 
+    private void Start() {
+        _droneController = GetComponent<DroneController>();
+    }
+
     void Update() {
         batteryUpdate();
     }

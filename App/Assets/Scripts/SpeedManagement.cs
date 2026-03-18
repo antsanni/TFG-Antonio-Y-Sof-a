@@ -1,3 +1,4 @@
+using System.Net.WebSockets;
 using TMPro;
 using UnityEngine;
 
@@ -9,17 +10,17 @@ public class SpeedManagement : MonoBehaviour {
     public float MIN_SPEED = 1f;
     public float MAX_SPEED = 20f;
 
-    private DroneController _droneController;
+    public DroneWSClient _ws;
 
     public void IncreaseSpeed() {
         currentSpeed = Mathf.Min(currentSpeed + STEP, MAX_SPEED);
-        _droneController.Command_SetSpeed(currentSpeed);
+        _ws.SendSetSpeed(currentSpeed);
         UpdateText();
     }
 
     public void DecreaseSpeed() {
         currentSpeed = Mathf.Max(currentSpeed - STEP, MIN_SPEED);
-        _droneController.Command_SetSpeed(currentSpeed);
+        _ws.SendSetSpeed(currentSpeed);
         UpdateText();
     }
 
@@ -30,7 +31,6 @@ public class SpeedManagement : MonoBehaviour {
     }
 
     private void Start() {
-        _droneController = GetComponent<DroneController>();
         UpdateText();
     }
 }
