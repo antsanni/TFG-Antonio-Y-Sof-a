@@ -150,6 +150,12 @@ async def handler(websocket: WebSocketServerProtocol):
                     target_drone.home_location = LocationGlobal(float(lat), float(lon), float(alt))
                     print(f"[Dron {drone_id}] Base fijada en {lat}, {lon}")
 
+            elif cmd == "set_battery_level":
+                level = data.get("level")
+                if level is not None:
+                    target_drone.simulated_battery = float(level)
+                    print(f"[Dron {drone_id}] Batería recargada al {level}% desde Unity.")
+
             elif cmd == "upload_mission":
                 wps = data.get("waypoints", [])
                 print(f"[Dron {drone_id}] Recibida misión de {len(wps)} puntos. Cargando en memoria...")

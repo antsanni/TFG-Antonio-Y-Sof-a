@@ -155,7 +155,12 @@ public class DroneWSClient : MonoBehaviour {
                 string armadoIcono = data.isArmed ? "🟢" : "🔴";
 
                 // Añadimos la información de este dron a la lista (con \n para saltar de línea)
-                textoDashboard += $"<b>Dron {numeroDron}</b> {armadoIcono} | Alt: {data.altitud:F1}m | Bat: {data.level:F0}% | Modo: {data.flightMode}\n";
+                // Primera línea: Dron, Altitud, Latitud, Longitud (con salto de línea al final)
+                textoDashboard += $"<b>Dron {numeroDron}:</b> {armadoIcono} | Alt: {data.altitud:F1}m | Lat: {data.latitud:F5} | Lon: {data.longitud:F5}\n";
+
+                // Segunda línea: Batería, Modo y doble salto de línea para separarlo del siguiente dron
+                textoDashboard += $"Bat: {data.level:F0}% | Modo: {data.flightMode}\n\n";
+            
             }
 
             // Imprimimos el texto final en la pantalla
@@ -163,8 +168,7 @@ public class DroneWSClient : MonoBehaviour {
         }
 
         // Dejamos infoTextR libre o lo vaciamos si no lo usamos por ahora
-        if (infoTextR != null)
-        {
+        if (infoTextR != null) {
             infoTextR.text = $"Drones Activos: {ultimaDataDrones.Count}";
         }
 
@@ -265,6 +269,9 @@ public class DroneWSClient : MonoBehaviour {
                     continue;
                 }
             }
+
+            // Actualiza la información del dron en la agenda (aunque ya exista, para tener siempre los datos más recientes)
+            ultimaDataDrones[dron.id] = dron;
 
             // Accede al objeto (Instancia del prefab de dron)
             GameObject dronAActualizar = dronesActivos[dron.id];
