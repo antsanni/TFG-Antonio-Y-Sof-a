@@ -24,8 +24,7 @@ public class SpeedManagement : MonoBehaviour {
         UpdateText();
     }
 
-    private void UpdateText()
-    {
+    private void UpdateText()  {
         if (DesiredSpeedTxt != null)
             DesiredSpeedTxt.text = $"{currentSpeed:0.0} m/s";
     }

@@ -140,13 +140,11 @@ public class DroneWSClient : MonoBehaviour {
         // Actualiza la UI (si las referencias están puestas en el Inspector -> no son nulas)
         //if (infoTextL != null) infoTextL.text = $"Alt: {altitude:F1} m";
         //if (infoTextR != null) infoTextR.text = $"Bat: {batteryLevel:F0}%";
-        if (infoTextL != null)
-        {
+        if (infoTextL != null) {
             string textoDashboard = ""; // Aquí construiremos la lista de texto
 
             // Recorremos todos los drones de los que tenemos datos guardados
-            foreach (var kvp in ultimaDataDrones)
-            {
+            foreach (var kvp in ultimaDataDrones) {
                 int dronId = kvp.Key;
                 DroneData data = kvp.Value;
 
@@ -188,16 +186,13 @@ public class DroneWSClient : MonoBehaviour {
     /// <summary>
     /// Genera una misión en forma de cuadrado alrededor del dron y se la envía
     /// </summary>
-    public void EnviarMisionDePrueba(int droneId)
-    {
-        if (!IsOpen())
-        {
+    public void EnviarMisionDePrueba(int droneId) {
+        if (!IsOpen()) {
             Debug.LogWarning("WebSocket no conectado.");
             return;
         }
 
-        if (!ultimaDataDrones.ContainsKey(droneId))
-        {
+        if (!ultimaDataDrones.ContainsKey(droneId)) {
             Debug.LogWarning("Aún no tenemos la posición del dron para calcular la misión.");
             return;
         }
@@ -218,6 +213,9 @@ public class DroneWSClient : MonoBehaviour {
 
         // Enviamos la misión al servidor Python
         SendMission(droneId, wps);
+
+        // Iniciamos la misión
+        StartMission(droneId);
     }
 
     /// <summary>
@@ -360,7 +358,7 @@ public class DroneWSClient : MonoBehaviour {
         if (!e.IsText) return;
 
         // Muestra la información de telemetría recibida (puede llenar mucho la consola)
-        Debug.Log("📩 [UNITY] Recibido JSON: " + e.Data);
+        //Debug.Log("📩 [UNITY] Recibido JSON: " + e.Data);
 
         try {
             // Deserializa los datos recibidos -> JSON a una lista de objetos DroneData
@@ -434,6 +432,18 @@ public class DroneWSClient : MonoBehaviour {
         var payload = new { command = "upload_mission", id = droneId, waypoints = waypoints };
         ws.Send(JsonConvert.SerializeObject(payload));
         Debug.Log($"Enviada misión con {waypoints.Count()} waypoints al servidor.");
+    }
+    /// <summary>
+    /// Inicia una misión enviada
+    /// </summary>
+    public void StartMission(int droneId) {
+        if (!IsOpen()) {
+            Debug.LogWarning("WebSocket no conectado. No se puede iniciar la misión.");
+            return;
+        }
+
+        var payload = new { command = "start_mission", id = droneId };
+        ws.Send(JsonConvert.SerializeObject(payload));
     }
 
     /// <summary>

@@ -73,6 +73,32 @@ async def telemetry_loop():
 
         await asyncio.sleep(0.1) # Enviar datos 10 veces por segundo
 
+async def ejecutar_mision(vehicle, altitud_despegue=15.0):
+    """Rutina asíncrona para armar, despegar y pasar a modo AUTO sin bloquear el WebSocket"""
+    print(f"[Dron {vehicle.mi_id}] Preparando para misión. Cambiando a GUIDED...")
+    vehicle.mode = VehicleMode("GUIDED")
+    
+    # Armamos motores
+    vehicle.armed = True
+
+    # Esperamos a que se arme (usando asyncio.sleep para no bloquear los demás drones)
+    while not vehicle.armed:
+        await asyncio.sleep(1)
+
+    print(f"[Dron {vehicle.mi_id}] ¡Armado! Iniciando despegue a {altitud_despegue}m...")
+    vehicle.simple_takeoff(altitud_despegue)
+
+    # Esperamos a que alcance el 95% de la altitud objetivo
+    while True:
+        alt_actual = vehicle.location.global_relative_frame.alt
+        if alt_actual >= altitud_despegue * 0.95:
+            print(f"[Dron {vehicle.mi_id}] Altitud alcanzada ({alt_actual:.1f}m).")
+            break
+        await asyncio.sleep(1)
+
+    # Pasamos a modo AUTO para que siga los waypoints cargados
+    print(f"[Dron {vehicle.mi_id}] Cambiando a modo AUTO. ¡Iniciando ruta!")
+    vehicle.mode = VehicleMode("AUTO")
 
 async def handler(websocket: WebSocketServerProtocol):
     """Recibe los comandos de Unity y se los aplica al dron correcto"""
@@ -126,9 +152,35 @@ async def handler(websocket: WebSocketServerProtocol):
 
             elif cmd == "upload_mission":
                 wps = data.get("waypoints", [])
-                print(f"[Dron {drone_id}] Recibida misión de {len(wps)} puntos. (Lógica a implementar)")
-                # Aquí iría tu lógica vieja de cargar WP, pero adaptada a target_drone
-                # (La dejo comentada para no alargar mucho el código, luego la podemos meter)
+                print(f"[Dron {drone_id}] Recibida misión de {len(wps)} puntos. Cargando en memoria...")
+                
+                # Obtenemos la lista de comandos del dron y la limpiamos
+                cmds = target_drone.commands
+                cmds.clear()
+
+                # Recorremos el JSON y añadimos cada punto como un Waypoint
+                for wp in wps:
+                    lat = wp.get("lat")
+                    lon = wp.get("lon")
+                    alt = wp.get("alt")
+                    
+                    # Creamos el comando MAVLink para el waypoint
+                    cmds.add(
+                        Command(0, 0, 0, 
+                                mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT, 
+                                mavutil.mavlink.MAV_CMD_NAV_WAYPOINT, 
+                                0, 0, 0, 0, 0, 0, 
+                                lat, lon, alt)
+                    )
+                
+                # Subimos la misión físicamente al dron
+                cmds.upload()
+                print(f"[Dron {drone_id}] ¡Misión subida correctamente!")
+
+            elif cmd == "start_mission":
+                print(f"[Dron {drone_id}] Orden de inicio de misión recibida.")
+                # Lanzamos la tarea de despegue en segundo plano
+                asyncio.create_task(ejecutar_mision(target_drone, 15.0))
 
     except ConnectionClosed:
         print("🔴 Unity desconectado.")
