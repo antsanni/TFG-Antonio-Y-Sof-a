@@ -1,11 +1,28 @@
 using UnityEngine;
+using TMPro;
 
 public class DroneController : MonoBehaviour {
     [Header("Identidad del Dron")]
     public int myId;
 
     [HideInInspector] 
-    public DroneWSClient wsClient; 
+    public DroneWSClient wsClient;
+
+    private void Start() { 
+         
+        int droneNum = ((myId - 5760) / 10) + 1;
+
+        TextMeshPro labelText = GetComponentInChildren<TextMeshPro>();
+
+        // Aplicamos el texto
+        if (labelText != null) {
+            labelText.text = $"Dron {droneNum}";
+        }
+        else {
+            Debug.LogWarning($"[Dron {myId}] No se encontró TextMeshPro para ponerle el nombre.");
+        }
+    }
+
 
     public void Command_ReturnToLaunch() {
         if (wsClient != null) {
