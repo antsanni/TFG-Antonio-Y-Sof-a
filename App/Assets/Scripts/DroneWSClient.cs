@@ -454,10 +454,29 @@ public class DroneWSClient : MonoBehaviour {
     }
 
     /// <summary>
-    /// Fija la base con los datos de latitud, longitud y altura recibidos por parámetro
+    /// Fija la base para todos los drones con los datos de latitud, longitud y altura recibidos por parámetro
     /// </summary>
-    public void SendSetHome(int droneId, double lat, double lon, double alt = 0) {
+    public void SendSetHome(double lat, double lon, double alt = 0) {
         if (!IsOpen()) {
+            Debug.LogWarning("WebSocket no conectado. No se puede fijar la base.");
+            return;
+        }
+
+        foreach (int droneId in dronesActivos.Keys) {
+            var payload = new { command = "set_home", id = droneId, lat, lon, alt };
+            ws.Send(JsonConvert.SerializeObject(payload));
+            Debug.Log($"[Dron {droneId}] " + $"Enviado set_home -> ({lat:F6}, {lon:F6}, alt {alt} m).");
+        }
+            
+    }
+
+    /// <summary>
+    /// Fija la base para el dron con id droneId con los datos de latitud, longitud y altura recibidos por parámetro
+    /// </summary>
+    public void SendSetHome(int droneId, double lat, double lon, double alt = 0)
+    {
+        if (!IsOpen())
+        {
             Debug.LogWarning("WebSocket no conectado. No se puede fijar la base.");
             return;
         }
