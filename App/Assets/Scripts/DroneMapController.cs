@@ -4,45 +4,21 @@ using Mapbox.Utils;
 using System.Collections.Generic;
 
 public class DroneMapController : MonoBehaviour
-{/*
-    public AbstractMap map;
-    public GameObject droneMarker;
-    public DroneWSClient wsClient;
-    public ZoneSelector zS;
-
-    private float agl;
+{
     private List<Vector2> zonaXZ = new();
     public float margen = 2f;
-    private Drone drone;
-
-    private void Start()
-    {
-        agl = zS.agl;
-        if (droneMarker != null)
-            drone = droneMarker.GetComponent<Drone>();
-    }
 
     private void Update()
     {
-        if (map == null || droneMarker == null || wsClient == null) return;
+        if (!zonasDefinidas) return;
 
-        float lat = wsClient.latitude;
-        float lon = wsClient.longitude;
-        float alt = wsClient.altitude;
+        // Busca todos los objetos "Drone" de la escena (los que tienen el cono visual)
+        Drone[] dronesActivos = FindObjectsOfType<Drone>();
 
-        Vector2d geoPosition = new Vector2d(lat, lon);
-        Vector3 unityPos = map.GeoToWorldPosition(geoPosition);
-
-        // Ajusta altura en base a AGL
-        unityPos.y += (alt > agl) ? agl : alt;
-
-        droneMarker.transform.position = unityPos;
-        droneMarker.transform.localRotation = Quaternion.Euler(0f, wsClient.yawDeg, 0f);
-
-        // Verifica si está dentro del polígono y activa/desactiva la cámara
-        if (zonasDefinidas && drone != null)
+        // Revisa uno por uno si están dentro del polígono para activarles la cámara
+        foreach (Drone drone in dronesActivos)
         {
-            Vector2 posXZ = new Vector2(unityPos.x, unityPos.z);
+            Vector2 posXZ = new Vector2(drone.transform.position.x, drone.transform.position.z);
             bool dentro = PuntoEnPoligonoConMargen(posXZ, zonaXZ, margen);
             drone.camara_status = dentro;
         }
@@ -77,8 +53,7 @@ public class DroneMapController : MonoBehaviour
             }
         }
 
-        if (dentro)
-            return true;
+        if (dentro) return true;
 
         // Comprobar si está fuera pero dentro del margen
         for (int i = 0, j = n - 1; i < n; j = i++)
@@ -100,5 +75,5 @@ public class DroneMapController : MonoBehaviour
         t = Mathf.Clamp01(t);
         Vector2 proyeccion = a + t * ab;
         return Vector2.Distance(p, proyeccion);
-    }*/
+    }
 }

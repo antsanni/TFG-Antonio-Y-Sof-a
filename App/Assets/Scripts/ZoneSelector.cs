@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.Linq;
 
 public class ZoneSelector : MonoBehaviour
-{/*
+{
     [Header("DroneWSClient")]
     public DroneWSClient client;
 
@@ -26,8 +26,6 @@ public class ZoneSelector : MonoBehaviour
     public Toggle toggleDrawMode;
     public Toggle placeBaseToggle;
 
-
-
     [Header("Path rendering")]
     [SerializeField] private Color pathStartColor = Color.cyan;
     [SerializeField] private Color pathEndColor = Color.green;
@@ -38,9 +36,9 @@ public class ZoneSelector : MonoBehaviour
     public float agl = 20f;
     [Header("Terrain following")]
     [Tooltip("0 = plano; 1 = sigue el terreno. Valores intermedios suavizan.")]
-    [Range(0f, 1f)][SerializeField] private float adaptationIntensity = 1f;
+    [Range(0f, 1f)] [SerializeField] private float adaptationIntensity = 1f;
     [Tooltip("Separación máxima entre muestras consecutivas de terreno.")]
-    [Min(0.1f)][SerializeField] private float sampleSpacing = 5.0f;
+    [Min(0.1f)] [SerializeField] private float sampleSpacing = 5.0f;
 
     [Header("Path simplification / densify")]
     [Tooltip("Factor para ε (Douglas-Peucker). 0 = nada, 1 = agresivo.")]
@@ -134,8 +132,15 @@ public class ZoneSelector : MonoBehaviour
                 if (client && map)
                 {
                     Vector2d geo = map.WorldToGeoPosition(hit.point);
-                    double terrainMSL = 0;
-                    client.SendSetHome(geo.x, geo.y, terrainMSL);
+
+                    // Fija la base para todos los drones (Enviamos 0 en altura)
+                    DroneController[] todosLosDrones = FindObjectsOfType<DroneController>();
+                    foreach (var d in todosLosDrones)
+                    {
+                        client.SendSetHome(d.myId, geo.x, geo.y, 0);
+                    }
+
+                    Debug.Log($"[ZoneSelector] Base verde colocada y enviada a {todosLosDrones.Length} drones.");
                 }
                 else
                 {
@@ -158,10 +163,8 @@ public class ZoneSelector : MonoBehaviour
         if (_pathLR) Destroy(_pathLR.gameObject);
     }
 
-    // Devuelve una copia del último path 2D (XZ)
     public List<Vector2> GetLastCoveragePath() => new(lastCoveragePath);
 
-    // Alterna modo de dibujo; al desactivar con >=3 puntos, cierra polígono y genera ruta
     private void ToggleDrawingMode(bool value)
     {
         isDrawing = value;
@@ -177,17 +180,14 @@ public class ZoneSelector : MonoBehaviour
         }
     }
 
-    // Alterna modo de colocación de base
     private void ToggleBase(bool value) => canPlace = value;
 
-    // Borra la ruta renderizada y su caché
     private void DeletePath()
     {
         lastCoveragePath.Clear();
         if (_pathLR) _pathLR.positionCount = 0;
     }
 
-    // Elimina nodos y paredes y limpia colecciones
     private void DeleteNodes()
     {
         if (wallsGo) Destroy(wallsGo);
@@ -198,7 +198,6 @@ public class ZoneSelector : MonoBehaviour
         maxNodeHeight = float.NegativeInfinity;
     }
 
-    // Crea paredes verticales del polígono
     private void CreateWalls(List<Vector3> topPositions, Material borderMat)
     {
         if (topPositions == null || topPositions.Count < 2) return;
@@ -226,9 +225,7 @@ public class ZoneSelector : MonoBehaviour
 
             int idx = vertices.Count;
             vertices.AddRange(new[] { top1, top2, bot1, bot2 });
-
             uvs.AddRange(new[] { new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 0), new Vector2(1, 0) });
-
             triangles.AddRange(new[] { idx, idx + 1, idx + 2, idx + 2, idx + 1, idx + 3 });
         }
 
@@ -242,7 +239,6 @@ public class ZoneSelector : MonoBehaviour
         mf.mesh = mesh;
     }
 
-    // Añade un vértice al polígono y re-nivela todos los nodos
     private void AddPoint(Vector3 worldPos)
     {
         if (!map || !walls_lineRenderer || !nodePrefab) return;
@@ -272,7 +268,6 @@ public class ZoneSelector : MonoBehaviour
         nodes.Add(Instantiate(nodePrefab, finalPos, Quaternion.identity));
     }
 
-    // Cierra el polígono, crea paredes y genera la ruta de cobertura
     private void ClosePolygon()
     {
         if (geoPoints.Count < 3 || !map || !walls_lineRenderer) return;
@@ -322,10 +317,14 @@ public class ZoneSelector : MonoBehaviour
 
         if (droneMapController) droneMapController.SetZonaXZ(topPositions);
         CreateWalls(topPositions, borderMaterial);
+
+        // Dispara la generacion de ruta (lawnmower)
         GenerateCoveragePath();
+
+        // Avisa al ProgressManager que empiece a calcular el %
+        FindObjectOfType<ZoneProgressManager>()?.ComenzarConParedes();
     }
 
-    // Proyecta click del ratón al mapa en world space
     private static bool GetMousePositionOnMap(out Vector3 worldPos)
     {
         worldPos = Vector3.zero;
@@ -340,7 +339,6 @@ public class ZoneSelector : MonoBehaviour
         return false;
     }
 
-    // Inserta puntos intermedios cuando el desnivel supera el umbral
     private List<Vector2> AddSlopeBreaks(List<Vector2> inPath, float maxVertStep, float sampleStep)
     {
         if (inPath == null || inPath.Count < 2) return inPath;
@@ -376,7 +374,6 @@ public class ZoneSelector : MonoBehaviour
         return outPts;
     }
 
-    // Simplificación Douglas-Peucker sobre XY
     private static List<Vector2> DouglasPeucker(List<Vector2> src, float eps)
     {
         if (src == null || src.Count < 3) return src;
@@ -411,7 +408,6 @@ public class ZoneSelector : MonoBehaviour
         return dst;
     }
 
-    // Distancia punto-segmento AB
     private static float DistPointLine(Vector2 P, Vector2 A, Vector2 B)
     {
         float len2 = (B - A).sqrMagnitude;
@@ -421,7 +417,6 @@ public class ZoneSelector : MonoBehaviour
         return Vector2.Distance(P, proj);
     }
 
-    // Densifica por distancia y por desnivel máximo
     private List<Vector2> DensifyForHeight(IReadOnlyList<Vector2> xy, float baseStep, float maxVertStep)
     {
         List<Vector2> outPts = new() { xy[0] };
@@ -447,7 +442,6 @@ public class ZoneSelector : MonoBehaviour
         return outPts;
     }
 
-    // Convierte XY en 3D siguiendo terreno con suavizado vertical
     private Vector3[] BuildPath3D(IReadOnlyList<Vector2> xy)
     {
         Vector3[] p3 = new Vector3[xy.Count];
@@ -464,7 +458,6 @@ public class ZoneSelector : MonoBehaviour
         return p3;
     }
 
-    // Genera ruta de cobertura tipo “lawn-mower” dentro del polígono y actualiza el LineRenderer
     public List<Vector2> GenerateCoveragePath()
     {
         const double SCALE = 1000.0;
@@ -528,45 +521,77 @@ public class ZoneSelector : MonoBehaviour
         return lastCoveragePath;
     }
 
-    // Exporta la ruta actual a waypoints y la envía al backend (DroneKit)
+    // =========================================================================
+    // EXPORTAR Y REPARTIR MISIONES A TODO EL ENJAMBRE (NUEVO)
+    // =========================================================================
     public void ExportMission()
     {
         if (lastCoveragePath == null || lastCoveragePath.Count == 0)
         {
-            Debug.LogWarning("ZoneSelector.ExportMission › No simplified path to export.");
+            Debug.LogWarning("ZoneSelector.ExportMission › No hay ruta calculada para exportar.");
             return;
         }
 
-        List<DroneWSClient.MissionWaypoint> wps = new(lastCoveragePath.Count);
+        if (!client)
+        {
+            Debug.LogWarning("ZoneSelector.ExportMission › No se encontró DroneWSClient en la escena.");
+            return;
+        }
 
+        // Buscamos todos los drones conectados y los ordenamos por ID para que el reparto sea predecible
+        DroneController[] dronesActivos = FindObjectsOfType<DroneController>().OrderBy(d => d.myId).ToArray();
+
+        if (dronesActivos.Length == 0)
+        {
+            Debug.LogWarning("ZoneSelector › ¡No hay drones activos en la escena para hacer la misión!");
+            return;
+        }
+
+        if (drone_base != null)
+        {
+            Vector2d geoBase = map.WorldToGeoPosition(drone_base.transform.position);
+            foreach (var d in dronesActivos)
+            {
+                client.SendSetHome(d.myId, geoBase.x, geoBase.y, 0); // <-- Altura a 0
+            }
+            Debug.Log("🏠 Recordatorio de Base enviado justo antes de despegar.");
+        }
+        // ---------------------------------------------------
+
+        // Convertimos la ruta 2D (plana) a Waypoints globales 3D
+        List<DroneWSClient.MissionWaypoint> wpsTotales = new(lastCoveragePath.Count);
         foreach (Vector2 p in lastCoveragePath)
         {
             Vector3 world = new Vector3(p.x, 0f, p.y);
             Vector2d geo = map.WorldToGeoPosition(world);
-            double terrainMSL = map.QueryElevationInUnityUnitsAt(geo);
-            wps.Add(new DroneWSClient.MissionWaypoint(geo.x, geo.y, terrainMSL + agl));
+
+            wpsTotales.Add(new DroneWSClient.MissionWaypoint(geo.x, geo.y, agl));
         }
 
-        if (wps.Count > maxWaypoints)
+        // Calculamos cuántos waypoints le tocan a cada dron (división hacia arriba)
+        int waypointsPorDron = Mathf.CeilToInt((float)wpsTotales.Count / dronesActivos.Length);
+
+        Debug.Log($"[ZoneSelector] Repartiendo {wpsTotales.Count} WPs entre {dronesActivos.Length} drones ({waypointsPorDron} WPs/dron).");
+
+        // Repartimos los waypoints y enviamos la orden de despegue a cada uno
+        for (int i = 0; i < dronesActivos.Length; i++)
         {
-            float ratio = (float)(wps.Count - 1) / (maxWaypoints - 1);
-            List<DroneWSClient.MissionWaypoint> reduced = new(maxWaypoints);
+            // Cortamos el "trozo" de lista que le corresponde a este dron específico
+            List<DroneWSClient.MissionWaypoint> trozoMision = wpsTotales.Skip(i * waypointsPorDron).Take(waypointsPorDron).ToList();
 
-            for (int i = 0; i < maxWaypoints; i++)
+            if (trozoMision.Count > 0)
             {
-                int idx = Mathf.RoundToInt(i * ratio);
-                if (idx >= wps.Count) idx = wps.Count - 1;
-                reduced.Add(wps[idx]);
-            }
-            wps = reduced;
-            Debug.Log($"[ZoneSelector] Ruta recortada de {lastCoveragePath.Count} → {wps.Count} (límite DroneKit).");
-        }
+                // 1. Le subimos la ruta a su memoria
+                client.SendMission(dronesActivos[i].myId, trozoMision);
 
-        if (client) client.SendMission(wps);
-        else Debug.LogWarning("ZoneSelector.ExportMission › No DroneWSClient found in the scene.");
+                // 2. Le damos la orden de arrancar (pasa a GUIDED, arma, despega y pasa a AUTO)
+                client.StartMission(dronesActivos[i].myId);
+
+                Debug.Log($"---> Dron {dronesActivos[i].myId} ha recibido {trozoMision.Count} waypoints y está despegando.");
+            }
+        }
     }
 
-    // Re-muestrea el camino para limitar longitud de segmentos
     private static List<Vector2> ResamplePath(IReadOnlyList<Vector2> src, float maxSegLen)
     {
         if (src == null || src.Count == 0) return new List<Vector2>();
@@ -589,7 +614,6 @@ public class ZoneSelector : MonoBehaviour
         return res;
     }
 
-    // Altura del terreno (unidades de Unity) en XZ
     private float SampleGroundY(Vector2 pXZ)
     {
         Vector3 world = new(pXZ.x, 0f, pXZ.y);
@@ -597,7 +621,6 @@ public class ZoneSelector : MonoBehaviour
         return map.QueryElevationInUnityUnitsAt(latLon);
     }
 
-    // Convierte lista de Vector2 (XZ) a Path64 de Clipper con escala
     private static Path64 ToPath64(IEnumerable<Vector2> poly, double s)
     {
         Path64 p = new();
@@ -605,7 +628,6 @@ public class ZoneSelector : MonoBehaviour
         return p;
     }
 
-    // Convierte Path64 a lista de Vector2 usando escala
     private static List<Vector2> ToVector2(Path64 p, double s)
-        => p.Select(q => new Vector2((float)(q.X / s), (float)(q.Y / s))).ToList();*/
+        => p.Select(q => new Vector2((float)(q.X / s), (float)(q.Y / s))).ToList();
 }
