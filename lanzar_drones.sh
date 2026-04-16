@@ -21,15 +21,12 @@ cd ~/ardupilot || exit 1
 
 for (( i=0; i<NUM_DRONES; i++ ))
 do
-
-    OFFSET=$(echo "0.0001 * $i" | bc)
-    LAT=$(echo "28.761800 + $OFFSET" | bc)
     puerto=$((5760 + 10 * i))
 
     echo " -> Dron $i listo (En puerto $puerto)"
 
-    # Comando que pone todo en marcha (El DISPLAY="" evita que salten consolas)
-    DISPLAY="" nohup python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f quad --no-mavproxy --instance $i --sysid $(($i+1)) --custom-location=$LAT,-17.741078,0,0 > /dev/null 2>&1 &
+    # Comando que pone todo en marcha en las coordenadas exactas que quieres
+    DISPLAY="" nohup python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f quad --no-mavproxy --instance $i --sysid $(($i+1)) --custom-location=28.760784,-17.747523,0,0 > /dev/null 2>&1 &
 
     sleep 5
 done

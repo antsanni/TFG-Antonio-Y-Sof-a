@@ -145,7 +145,7 @@ async def handler(websocket: WebSocketServerProtocol):
                         target_drone._master.target_system,
                         target_drone._master.target_component,
                         mavutil.mavlink.MAV_CMD_DO_SET_HOME,
-                        0, 1, 0, 0, 0, float(lat), float(lon), float(alt),
+                        0, 0, 0, 0, 0, float(lat), float(lon), float(alt),
                     )
                     target_drone.home_location = LocationGlobal(float(lat), float(lon), float(alt))
                     print(f"[Dron {drone_id}] Base fijada en {lat}, {lon}")
