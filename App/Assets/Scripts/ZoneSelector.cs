@@ -1130,6 +1130,79 @@ public class ZoneSelector : MonoBehaviour {
 
     }
 
+    /*
+     public void ExportMission()
+    {
+        if (lastCoveragePath == null || lastCoveragePath.Count == 0)
+        {
+            Debug.LogWarning("ZoneSelector.ExportMission › No hay ruta calculada para exportar.");
+            return;
+        }
+
+        if (!wsClient) {
+            Debug.LogWarning("ZoneSelector.ExportMission › No se encontró DroneWSClient en la escena.");
+            return;
+        }
+
+        // 1. Buscamos a los drones y los ordenamos por ID para que el reparto sea organizado
+        DroneController[] dronesActivos = FindObjectsOfType<DroneController>().OrderBy(d => d.myId).ToArray();
+        
+        if (dronesActivos.Length == 0) {
+            Debug.LogWarning("ZoneSelector › ¡No hay drones activos en la escena para hacer la misión!");
+            return;
+        }
+
+        // 2. Convertimos la ruta plana 2D (XZ) a Waypoints globales (Lat/Lon/Alt)
+        List<DroneWSClient.MissionWaypoint> wpsTotales = new(lastCoveragePath.Count);
+        foreach (Vector2 p in lastCoveragePath)
+        {
+            Vector3 world = new Vector3(p.x, 0f, p.y);
+            Vector2d geo = map.WorldToGeoPosition(world);
+            double terrainMSL = map.QueryElevationInUnityUnitsAt(geo);
+            wpsTotales.Add(new DroneWSClient.MissionWaypoint(geo.x, geo.y, terrainMSL + agl));
+        }
+
+        // Reducimos puntos si supera el límite de seguridad de DroneKit
+        if (wpsTotales.Count > maxWaypoints)
+        {
+            float ratio = (float)(wpsTotales.Count - 1) / (maxWaypoints - 1);
+            List<DroneWSClient.MissionWaypoint> reduced = new(maxWaypoints);
+
+            for (int i = 0; i < maxWaypoints; i++)
+            {
+                int idx = Mathf.RoundToInt(i * ratio);
+                if (idx >= wpsTotales.Count) idx = wpsTotales.Count - 1;
+                reduced.Add(wpsTotales[idx]);
+            }
+            wpsTotales = reduced;
+            Debug.Log($"[ZoneSelector] Ruta recortada de {lastCoveragePath.Count} → {wpsTotales.Count} (límite DroneKit).");
+        }
+
+        // 3. CÁLCULO DE REPARTO EQUITATIVO
+        // Calculamos cuántos puntos le tocan a cada dron (redondeando hacia arriba para que no queden huecos al final)
+        int waypointsPorDron = Mathf.CeilToInt((float)wpsTotales.Count / dronesActivos.Length);
+
+        Debug.Log($"[ZoneSelector] Repartiendo {wpsTotales.Count} WPs entre {dronesActivos.Length} drones ({waypointsPorDron} WPs/dron).");
+
+        for (int i = 0; i < dronesActivos.Length; i++)
+        {
+            // 4. SECCIONAMOS LA RUTA para cada dron
+            // Skip: salta los puntos que ya le dimos a los drones anteriores
+            // Take: coge solo su "porción" de puntos
+            List<DroneWSClient.MissionWaypoint> trozoMision = wpsTotales.Skip(i * waypointsPorDron).Take(waypointsPorDron).ToList();
+            
+            if (trozoMision.Count > 0)
+            {
+                // 5. Enviamos su trozo de misión al servidor de Python y ordenamos que arranque
+                wsClient.SendMission(dronesActivos[i].myId, trozoMision);
+                wsClient.StartMission(dronesActivos[i].myId);
+                
+                Debug.Log($"---> Dron {dronesActivos[i].myId} ha recibido {trozoMision.Count} waypoints y está despegando.");
+            }
+        }
+    }
+     */
+
 
 
     // Re-muestrea el camino para limitar longitud de segmentos
