@@ -3,17 +3,37 @@ using System.Collections;
 
 public class BatteryManager : MonoBehaviour
 {
-    // 1. Umbral cambiado a 30%
-    public float batteryThreshold = 30f;
+    [Header("Cálculo Dinámico de Batería")]
+    [Tooltip("Velocidad de vuelta a casa en m/s (ArduPilot suele volver a 5 m/s)")]
+    public float rtlSpeed = 5.0f;
+    [Tooltip("Porcentaje de batería que gasta por segundo (0.033 * 10 ticks = 0.33)")]
+    public float batteryDrainPerSec = 0.33f;
+    [Tooltip("Margen de seguridad extra en % (para el descenso y maniobras)")]
+    public float safetyMargin = 8.0f;
+
     public float batteryLevel;
     public bool isCharging = false;
     public bool isRTLInProgress = false;
 
     private DroneController _droneController;
+    private Transform _baseTransform;
 
     private void Start()
     {
         _droneController = GetComponent<DroneController>();
+        StartCoroutine(FindBaseCoroutine());
+    }
+
+    private IEnumerator FindBaseCoroutine()
+    {
+        yield return new WaitForSeconds(2f);
+
+        GameObject baseObj = GameObject.Find("Base_Inicial_Dron_" + _droneController.myId);
+        if (baseObj != null)
+        {
+            _baseTransform = baseObj.transform;
+            Debug.Log($"[Dron {_droneController.myId}] 🎯 Base localizada para cálculos de batería.");
+        }
     }
 
     void Update()
@@ -24,7 +44,7 @@ public class BatteryManager : MonoBehaviour
     private void batteryUpdate()
     {
         DroneWSClient.BatteryData batteryData = _droneController.wsClient.GetBatteryData(_droneController.myId);
-        if (batteryData == null) return; // Evitar errores si no se obtiene la información de la batería
+        if (batteryData == null) return;
 
         batteryLevel = batteryData.level;
 
@@ -33,13 +53,21 @@ public class BatteryManager : MonoBehaviour
                            batteryData.flightMode != "RTL" &&
                            batteryData.flightMode != "LAND";
 
-        // 2. Dispara el RTL si baja del 30%
-        if (!isCharging && !isRTLInProgress && batteryLevel <= batteryThreshold && droneFlying)
+        float umbralDinamico = 20f;
+
+        if (_baseTransform != null)
         {
-            Debug.Log($"[Dron {_droneController.myId}] Batería baja ({batteryLevel:F0}%). Iniciando RTL para recargar.");
+            float distance = Vector3.Distance(transform.position, _baseTransform.position);
+            float timeToHome = distance / rtlSpeed;
+            float batteryNeeded = timeToHome * batteryDrainPerSec;
+            umbralDinamico = batteryNeeded + safetyMargin;
+        }
+
+        if (!isCharging && !isRTLInProgress && batteryLevel <= umbralDinamico && droneFlying)
+        {
+            Debug.Log($"[Dron {_droneController.myId}] Batería ({batteryLevel:F1}%). Necesita {umbralDinamico:F1}% para volver a salvo. ¡Iniciando RTL inteligente!");
             isRTLInProgress = true;
 
-            // Forzamos el envío de RTL desde el cliente directamente por seguridad
             _droneController.wsClient.SendReturnToLaunch(_droneController.myId);
 
             StartCoroutine(HandleBatteryRecharge());
@@ -50,12 +78,10 @@ public class BatteryManager : MonoBehaviour
     {
         Debug.Log($"[Dron {_droneController.myId}] Esperando a que aterrice en la base...");
 
-        // Esperamos hasta que el dron toque el suelo (desarmado o altura muy baja)
         while (true)
         {
             var currentData = _droneController.wsClient.GetBatteryData(_droneController.myId);
 
-            // Si aterriza y se desarma, o se queda a menos de 1m, consideramos que ha llegado
             if (currentData != null && (!currentData.isArmed || currentData.altitude <= 1.0f))
             {
                 break;
@@ -66,31 +92,24 @@ public class BatteryManager : MonoBehaviour
         Debug.Log($"[Dron {_droneController.myId}] ¡Aterrizado! Iniciando recarga poco a poco...");
         isCharging = true;
 
-        // Miramos cuánta batería le queda al llegar (probablemente menos del 30%)
         var startData = _droneController.wsClient.GetBatteryData(_droneController.myId);
         float startingBattery = startData != null ? startData.level : 0f;
 
-        // 3. ¿Cuánto quieres que tarde en recargar? (He puesto 15 segundos para no hacerte esperar mucho en pruebas)
         float duration = 15f;
         float timer = 0f;
 
-        // 4. Bucle de recarga gradual sincronizado con el servidor
         while (timer < duration)
         {
-            timer += 1f; // Avanzamos 1 segundo
+            timer += 1f;
             float progress = timer / duration;
 
-            // Calculamos el porcentaje actual (ej: pasa del 25% al 100% de forma suave)
             float simulatedBattery = Mathf.Lerp(startingBattery, 100f, progress);
 
-            // IMPORTANTE: Le enviamos la recarga parcial a Python para que la UI y los demás scripts se enteren
             _droneController.wsClient.SendSetBatteryLevel(_droneController.myId, simulatedBattery);
 
-            // Esperamos un segundo antes del siguiente "chute" de energía
             yield return new WaitForSeconds(1f);
         }
 
-        // Por si acaso los decimales bailan, aseguramos el 100% clavado al final
         _droneController.wsClient.SendSetBatteryLevel(_droneController.myId, 100f);
 
         isCharging = false;
@@ -98,7 +117,6 @@ public class BatteryManager : MonoBehaviour
 
         Debug.Log($"[Dron {_droneController.myId}] 🔋 Carga completada. Relanzando misión.");
 
-        // Asumiendo que tu método resume mission está así (o usa la función wrapper de tu DroneController)
         _droneController.wsClient.SendResumeMission(_droneController.myId);
     }
 }
