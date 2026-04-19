@@ -3,12 +3,21 @@ import json
 import time
 import threading
 import argparse
+import base64
+import numpy as np
+import cv2
 
 from websockets.server import WebSocketServerProtocol, serve
 from websockets.exceptions import ConnectionClosed
 
 from dronekit import connect, VehicleMode, LocationGlobal, Command
 from pymavlink import mavutil
+
+print("Cargando modelo YOLOv8...")
+from ultralytics import YOLO
+modelo_yolo = YOLO('yolov8n.pt')
+print("¡Modelo YOLO cargado y listo para buscar personas!")
+# ---------------------------------------------
 
 puerto_base = 5760
 PUERTOS = []
@@ -33,13 +42,13 @@ def conectar_vehiculo(puerto):
     except Exception as e:
         print(f" [Hilo {puerto}] Error: {e}")
 
-
 async def telemetry_loop():
     while True:
         paquete_envio = []
         for dron in DRONES:
             try:
                 if dron.armed:
+                    # Gasta 0.033 cada tick -> 5 minutos de vuelo
                     dron.simulated_battery = max(0.0, dron.simulated_battery - 0.033)
 
                 datos = {
@@ -64,7 +73,6 @@ async def telemetry_loop():
             )
 
         await asyncio.sleep(0.1)
-
 
 async def ejecutar_rtl_desde_suelo(vehicle, altitud_despegue=20.0):
     print(f"[Dron {vehicle.mi_id}] RTL en suelo. Armando y subiendo...")
@@ -91,7 +99,6 @@ async def ejecutar_rtl_desde_suelo(vehicle, altitud_despegue=20.0):
 
     vehicle.mode = VehicleMode("RTL")
     print(f"[Dron {vehicle.mi_id}] Volviendo a la base...")
-
 
 async def ejecutar_mision(vehicle, altitud_despegue=20.0):
     print(f"[Dron {vehicle.mi_id}] Preparando para misión. Cambiando a GUIDED...")
@@ -120,9 +127,7 @@ async def ejecutar_mision(vehicle, altitud_despegue=20.0):
 
     vehicle.mode = VehicleMode("AUTO")
 
-
 async def ejecutar_resume(vehicle, altitud_despegue=20.0):
-    """Despega y recupera el MARCAPÁGINAS para seguir la ruta por donde iba"""
     print(f"[Dron {vehicle.mi_id}] Reanudando misión. Preparando despegue...")
     vehicle.mode = VehicleMode("GUIDED")
     vehicle.armed = True
@@ -130,7 +135,6 @@ async def ejecutar_resume(vehicle, altitud_despegue=20.0):
     while not vehicle.armed:
         await asyncio.sleep(1)
 
-    # Inyectamos la base por si acaso se le olvidó al armar
     if hasattr(vehicle, 'mi_base_guardada'):
         lat, lon = vehicle.mi_base_guardada
         vehicle._master.mav.command_long_send(
@@ -147,13 +151,10 @@ async def ejecutar_resume(vehicle, altitud_despegue=20.0):
             break
         await asyncio.sleep(1)
 
-    # --- LECTURA DEL MARCAPÁGINAS ---
     if hasattr(vehicle, 'wp_guardado'):
-        # Forzamos a ArduPilot a saltar al punto donde se quedó
-        # (Usamos max(1, ...) porque el waypoint 0 es la base, la ruta empieza en el 1)
         wp_a_retomar = max(1, vehicle.wp_guardado)
         vehicle.commands.next = wp_a_retomar
-        print(f"[Dron {vehicle.mi_id}] 📖 Retomando misión directamente desde el punto {wp_a_retomar}...")
+        print(f"[Dron {vehicle.mi_id}] 📖 Retomando misión desde el punto {wp_a_retomar}...")
     
     print(f"[Dron {vehicle.mi_id}] Cambiando a AUTO.")
     vehicle.mode = VehicleMode("AUTO")
@@ -174,12 +175,53 @@ async def handler(websocket: WebSocketServerProtocol):
             drone_id = data.get("id")
 
             target_drone = next((d for d in DRONES if d.mi_id == drone_id), None)
-
             if target_drone is None:
                 continue
 
-            if cmd == "return_to_launch":
-                # --- CREAR EL MARCAPÁGINAS ---
+            # --- NUEVO COMANDO: VISIÓN ARTIFICIAL ---
+            if cmd == "process_image":
+                imagen_base64 = data.get("image")
+                if imagen_base64:
+                    try:
+                        # 1. Convertimos el texto (Base64) a una imagen real de OpenCV
+                        img_bytes = base64.b64decode(imagen_base64)
+                        img_np = np.frombuffer(img_bytes, dtype=np.uint8)
+                        frame = cv2.imdecode(img_np, cv2.IMREAD_COLOR)
+
+                        # 2. Le pasamos la imagen a YOLO
+                        # verbose=False es para que no llene la consola de texto en cada frame
+                        resultados = modelo_yolo(frame, verbose=False)
+
+                        # 3. Comprobamos si hay alguna persona (Clase 0 en YOLO = 'person')
+                        persona_detectada = False
+                        for resultado in resultados:
+                            for caja in resultado.boxes:
+                                if int(caja.cls[0]) == 0:  # Si la clase es 0
+                                    persona_detectada = True
+                                    break
+
+                        # 4. Si hay una persona, avisamos
+                        if persona_detectada:
+                            lat = target_drone.location.global_relative_frame.lat
+                            lon = target_drone.location.global_relative_frame.lon
+                            
+                            print(f"🚨 [Dron {drone_id}] ¡PERSONA DETECTADA en Lat: {lat}, Lon: {lon}!")
+                            
+                            # (Opcional por ahora) Le mandamos un chivatazo a Unity
+                            alerta = json.dumps([{
+                                "type": "alert",
+                                "message": "person_detected",
+                                "id": drone_id,
+                                "lat": lat,
+                                "lon": lon
+                            }])
+                            await websocket.send(alerta)
+
+                    except Exception as e:
+                        print(f"Error procesando imagen: {e}")
+            # ----------------------------------------
+
+            elif cmd == "return_to_launch":
                 if hasattr(target_drone, 'commands'):
                     target_drone.wp_guardado = target_drone.commands.next
                     print(f"[Dron {drone_id}] 🔖 Batería baja. Guardando progreso en el punto: {target_drone.wp_guardado}")
@@ -208,7 +250,6 @@ async def handler(websocket: WebSocketServerProtocol):
                 lat, lon = data.get("lat"), data.get("lon")
                 if lat is not None and lon is not None:
                     target_drone.mi_base_guardada = (float(lat), float(lon))
-                    
                     target_drone._master.mav.command_long_send(
                         target_drone._master.target_system,
                         target_drone._master.target_component,
@@ -242,7 +283,6 @@ async def handler(websocket: WebSocketServerProtocol):
         print("🔴 Unity desconectado.")
     finally:
         clients.discard(websocket)
-
 
 async def main() -> None:
     print("---- LANZANDO HILOS DE CONEXION ----")
