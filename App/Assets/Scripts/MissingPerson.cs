@@ -14,6 +14,7 @@ public class MissingPerson : MonoBehaviour
     public Camera cam;
     public LayerMask hitMask;
     public float maxRayDistance = 500f;
+    public DroneWSClient droneWSClient;
 
     [Header("Mapbox")]
     public AbstractMap map;

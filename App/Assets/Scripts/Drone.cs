@@ -8,7 +8,7 @@ public class Drone : MonoBehaviour
     public Transform visionCone;
     public LayerMask layerMallaModificable;
     public LayerMask layerMissingPerson;
-    public DroneWSClient droneWSClient;
+    private DroneController droneController;
 
     public Color colorMarcado = new Color(0f, 0f, 1f, 0.4f);
     public bool camara_status = true;
@@ -29,6 +29,7 @@ public class Drone : MonoBehaviour
 
     private void Start()
     {
+        droneController = GetComponent<DroneController>();
         reportedTarget = null;
 
         if (visionCone != null)
@@ -122,19 +123,11 @@ public class Drone : MonoBehaviour
                 detectado = c.gameObject;
         }
 
-        if (detectado != null && detectado != reportedTarget)
-        {
+        if (detectado != null && detectado != reportedTarget) {
             Debug.Log("Missing person Found!");
             ShowFoundBanner();
             reportedTarget = detectado;
-
-            if (droneWSClient != null &&
-                droneWSClient.isArmed &&
-                droneWSClient.altitude > 2f &&
-                droneWSClient.flightMode != "RTL")
-            {
-                droneWSClient.SendReturnToLaunch();
-            }
+            droneController.wsClient.SendReturnToLaunch();
         }
     }
 
