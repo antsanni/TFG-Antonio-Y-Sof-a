@@ -55,14 +55,10 @@ public class MissingPerson : MonoBehaviour
     }
 
     // Convierte posición world a lat/lon y actualiza el texto
+    // Muestra un mensaje de búsqueda en lugar de hacer spoiler de las coordenadas
     private void UpdateTextCoords(Vector3 worldPos)
     {
-
-        Vector2d lonLat = map.WorldToGeoPosition(worldPos);
-        double lon = lonLat.x;
-        double lat = lonLat.y;
-
-        coordsText.text = $"Heat signal detected! Possible person found at lat: {lat:F6} lon: {lon:F6}";
+        coordsText.text = "🔍 Despliegue completado. Drones iniciando búsqueda de la persona desaparecida...";
     }
 
     // Comprueba si un punto está dentro de un polígono en XZ

@@ -1,6 +1,7 @@
 ﻿using UnityEngine;
 using WebSocketSharp;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq; // <-- NUEVO: Para poder leer el tipo de mensaje antes de procesarlo
 using System.Linq;
 using System.Collections.Generic;
 
@@ -34,6 +35,8 @@ public class DroneWSClient : MonoBehaviour
 
     private List<DroneData> datosRecibidosPendientes = null; // Lista de drones recibidos pero aún no procesados (buzón entre el hilo del WebSocket y el Update de Unity)
     private readonly object candado = new object(); // Cerrojo para acceder a la lista de datos recibidos de forma segura entre hilos
+
+    private string mensajeAlertaPendiente = null; // <-- NUEVO: Buzón exclusivo para los avisos de la IA
 
     // Información sobre el dron (variables públicas para que sean accesibles desde scripts externos)
     [Header("Drone Data")]
@@ -200,6 +203,30 @@ public class DroneWSClient : MonoBehaviour
         {
             ProcesarDrones(datosParaProcesar);
         }
+
+        // --- NUEVO: LECTOR DEL BUZÓN DE ALERTAS DE IA ---
+        string alertaParaMostrar = null;
+        lock (candado)
+        {
+            if (mensajeAlertaPendiente != null)
+            {
+                alertaParaMostrar = mensajeAlertaPendiente;
+                mensajeAlertaPendiente = null; // Vaciamos el buzón tras leerlo
+            }
+        }
+
+        if (alertaParaMostrar != null)
+        {
+            Debug.LogWarning(alertaParaMostrar);
+
+            // Buscamos el cartel del MissingPerson de forma automática y le cambiamos el texto
+            MissingPerson mp = FindObjectOfType<MissingPerson>();
+            if (mp != null && mp.coordsText != null)
+            {
+                mp.coordsText.text = alertaParaMostrar;
+            }
+        }
+        // ------------------------------------------------
     }
 
     /// <summary>
@@ -410,12 +437,31 @@ public class DroneWSClient : MonoBehaviour
     {
         if (!e.IsText) return;
 
-        // Muestra la información de telemetría recibida (puede llenar mucho la consola)
-        //Debug.Log("📩 [UNITY] Recibido JSON: " + e.Data);
-
         try
         {
-            // Deserializa los datos recibidos -> JSON a una lista de objetos DroneData
+            // 1. Miramos el JSON por encima para ver de qué tipo es
+            JArray jsonArray = JArray.Parse(e.Data);
+
+            // 2. Comprobamos si es una alerta de la Inteligencia Artificial
+            if (jsonArray.Count > 0 && jsonArray[0]["type"] != null && jsonArray[0]["type"].ToString() == "alert")
+            {
+                if (jsonArray[0]["message"] != null && jsonArray[0]["message"].ToString() == "person_detected")
+                {
+                    int id = (int)jsonArray[0]["id"];
+                    float lat = (float)jsonArray[0]["lat"];
+                    float lon = (float)jsonArray[0]["lon"];
+                    int droneNum = ((id - 5760) / 10) + 1;
+
+                    // Guardamos el mensaje en el buzón de forma segura
+                    lock (candado)
+                    {
+                        mensajeAlertaPendiente = $"🚨 ¡IA del Dron {droneNum} ha detectado a la persona!\nLat: {lat:F6} | Lon: {lon:F6}";
+                    }
+                }
+                return; // Salimos de la función para no procesarlo como telemetría normal
+            }
+
+            // 3. Si no era una alerta, es telemetría normal. La procesamos como siempre:
             List<DroneData> incomingList = JsonConvert.DeserializeObject<List<DroneData>>(e.Data);
 
             // Almacena los datos en datosRecibidosPendientes de forma segura, para gestionarlos más adelante en el Update
@@ -621,9 +667,20 @@ public class DroneWSClient : MonoBehaviour
     /// <returns>
     /// True si el socket existe y está abierto
     /// </returns>
-    private bool IsOpen()
+    public bool IsOpen()
     {
         return ws != null && ws.ReadyState == WebSocketState.Open;
+    }
+
+    /// <summary>
+    /// Envía la foto codificada a Python para que YOLO la analice
+    /// </summary>
+    public void SendProcessImage(int droneId, string base64Image)
+    {
+        if (!IsOpen()) return;
+
+        var payload = new { command = "process_image", id = droneId, image = base64Image };
+        ws.Send(JsonConvert.SerializeObject(payload));
     }
 
     /// <summary>

@@ -7,6 +7,11 @@ import base64
 import numpy as np
 import cv2
 
+import collections
+import collections.abc
+collections.MutableMapping = collections.abc.MutableMapping
+collections.Mapping = collections.abc.Mapping
+
 from websockets.server import WebSocketServerProtocol, serve
 from websockets.exceptions import ConnectionClosed
 
