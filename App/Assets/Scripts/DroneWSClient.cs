@@ -1,7 +1,7 @@
 ﻿using UnityEngine;
 using WebSocketSharp;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq; // <-- NUEVO: Para poder leer el tipo de mensaje antes de procesarlo
+using Newtonsoft.Json.Linq;
 using System.Linq;
 using System.Collections.Generic;
 
@@ -36,7 +36,8 @@ public class DroneWSClient : MonoBehaviour
     private List<DroneData> datosRecibidosPendientes = null; // Lista de drones recibidos pero aún no procesados (buzón entre el hilo del WebSocket y el Update de Unity)
     private readonly object candado = new object(); // Cerrojo para acceder a la lista de datos recibidos de forma segura entre hilos
 
-    private string mensajeAlertaPendiente = null; // <-- NUEVO: Buzón exclusivo para los avisos de la IA
+    private string mensajeAlertaPendiente = null; // Almacena temporalmente los avisos de detección recibidos por el WebSocket
+    private bool misionCompletada = false; // Control de estado para evitar el envío múltiple del comando RTL
 
     // Información sobre el dron (variables públicas para que sean accesibles desde scripts externos)
     [Header("Drone Data")]
@@ -149,9 +150,8 @@ public class DroneWSClient : MonoBehaviour
             Debug.Log("🚀 [TECLADO] Enviando misión de despegue al Dron 5760...");
             EnviarMisionDePrueba(5760); // Mandamos volar al Dron 1
         }
+
         // Actualiza la UI (si las referencias están puestas en el Inspector -> no son nulas)
-        //if (infoTextL != null) infoTextL.text = $"Alt: {altitude:F1} m";
-        //if (infoTextR != null) infoTextR.text = $"Bat: {batteryLevel:F0}%";
         if (infoTextL != null)
         {
             string textoDashboard = ""; // Aquí construiremos la lista de texto
@@ -204,14 +204,14 @@ public class DroneWSClient : MonoBehaviour
             ProcesarDrones(datosParaProcesar);
         }
 
-        // --- NUEVO: LECTOR DEL BUZÓN DE ALERTAS DE IA ---
+        // Procesamiento de alertas del modelo de IA
         string alertaParaMostrar = null;
         lock (candado)
         {
             if (mensajeAlertaPendiente != null)
             {
                 alertaParaMostrar = mensajeAlertaPendiente;
-                mensajeAlertaPendiente = null; // Vaciamos el buzón tras leerlo
+                mensajeAlertaPendiente = null;
             }
         }
 
@@ -219,14 +219,21 @@ public class DroneWSClient : MonoBehaviour
         {
             Debug.LogWarning(alertaParaMostrar);
 
-            // Buscamos el cartel del MissingPerson de forma automática y le cambiamos el texto
+            // Actualización de la interfaz de usuario con los datos de detección
             MissingPerson mp = FindObjectOfType<MissingPerson>();
             if (mp != null && mp.coordsText != null)
             {
                 mp.coordsText.text = alertaParaMostrar;
             }
+
+            // Ejecución del Return To Launch general al completar el objetivo
+            if (!misionCompletada)
+            {
+                misionCompletada = true;
+                Debug.Log("Objetivo localizado. Ordenando Return To Launch a toda la flota.");
+                SendReturnToLaunch();
+            }
         }
-        // ------------------------------------------------
     }
 
     /// <summary>
@@ -245,6 +252,8 @@ public class DroneWSClient : MonoBehaviour
             Debug.LogWarning("Aún no tenemos la posición del dron para calcular la misión.");
             return;
         }
+
+        misionCompletada = false; // Resetea el estado para permitir una nueva detección en futuras misiones
 
         // Cogemos donde está el dron ahora mismo
         DroneData data = ultimaDataDrones[droneId];
@@ -318,12 +327,7 @@ public class DroneWSClient : MonoBehaviour
                         droneController.wsClient = this;
                     }
 
-
-                    /*// Rotación del dron según el rumbo recibido...
-                    Vector3 rotacionActual = dronAActualizar.transform.rotation.eulerAngles;
-                    dronAActualizar.transform.rotation = Quaternion.Euler(rotacionActual.x, dron.rumbo, rotacionActual.z);*/
-
-                    // NUEVO: Guardamos toda la información actualizada en la agenda
+                    // Guardamos toda la información actualizada en la agenda
                     ultimaDataDrones[dron.id] = dron;
 
                     Debug.Log($"✅ [UNITY] ¡Dron {dron.id} CREADO CORRECTAMENTE en la escena!");
@@ -439,10 +443,9 @@ public class DroneWSClient : MonoBehaviour
 
         try
         {
-            // 1. Miramos el JSON por encima para ver de qué tipo es
             JArray jsonArray = JArray.Parse(e.Data);
 
-            // 2. Comprobamos si es una alerta de la Inteligencia Artificial
+            // Verificación del tipo de paquete recibido (identificación de alertas)
             if (jsonArray.Count > 0 && jsonArray[0]["type"] != null && jsonArray[0]["type"].ToString() == "alert")
             {
                 if (jsonArray[0]["message"] != null && jsonArray[0]["message"].ToString() == "person_detected")
@@ -452,19 +455,17 @@ public class DroneWSClient : MonoBehaviour
                     float lon = (float)jsonArray[0]["lon"];
                     int droneNum = ((id - 5760) / 10) + 1;
 
-                    // Guardamos el mensaje en el buzón de forma segura
                     lock (candado)
                     {
                         mensajeAlertaPendiente = $"🚨 ¡IA del Dron {droneNum} ha detectado a la persona!\nLat: {lat:F6} | Lon: {lon:F6}";
                     }
                 }
-                return; // Salimos de la función para no procesarlo como telemetría normal
+                return; // Finaliza la ejecución para evitar el procesamiento como telemetría general
             }
 
-            // 3. Si no era una alerta, es telemetría normal. La procesamos como siempre:
+            // Procesamiento de telemetría estándar
             List<DroneData> incomingList = JsonConvert.DeserializeObject<List<DroneData>>(e.Data);
 
-            // Almacena los datos en datosRecibidosPendientes de forma segura, para gestionarlos más adelante en el Update
             lock (candado)
             {
                 datosRecibidosPendientes = incomingList;
