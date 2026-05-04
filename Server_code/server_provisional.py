@@ -197,25 +197,35 @@ async def handler(websocket: WebSocketServerProtocol):
                         # verbose=False es para que no llene la consola de texto en cada frame
                         resultados = modelo_yolo(frame, verbose=False)
 
-                        # 3. Comprobamos si hay alguna persona (Clase 0 en YOLO = 'person')
-                        persona_detectada = False
+                        # 3. Comprobamos si hay alguna persona o fauna (Clase 0 = person, 14-23 = fauna en COCO)
+                        clases_fauna = [14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+                        objetivo_detectado = False
+                        tipo_detectado = ""
+                        
                         for resultado in resultados:
                             for caja in resultado.boxes:
-                                if int(caja.cls[0]) == 0:  # Si la clase es 0
-                                    persona_detectada = True
+                                cls_id = int(caja.cls[0])
+                                if cls_id == 0:
+                                    objetivo_detectado = True
+                                    tipo_detectado = "PERSONA"
+                                    break
+                                elif cls_id in clases_fauna:
+                                    objetivo_detectado = True
+                                    tipo_detectado = "FAUNA"
                                     break
 
-                        # 4. Si hay una persona, avisamos
-                        if persona_detectada:
+                        # 4. Si hay una persona o fauna, avisamos
+                        if objetivo_detectado:
                             lat = target_drone.location.global_relative_frame.lat
                             lon = target_drone.location.global_relative_frame.lon
                             
-                            print(f"🚨 [Dron {drone_id}] ¡PERSONA DETECTADA en Lat: {lat}, Lon: {lon}!")
+                            print(f"🚨 [Dron {drone_id}] ¡{tipo_detectado} DETECTADA en Lat: {lat}, Lon: {lon}!")
                             
                             # (Opcional por ahora) Le mandamos un chivatazo a Unity
+                            mensaje_alerta = "person_detected" if tipo_detectado == "PERSONA" else "animal_detected"
                             alerta = json.dumps([{
                                 "type": "alert",
-                                "message": "person_detected",
+                                "message": mensaje_alerta,
                                 "id": drone_id,
                                 "lat": lat,
                                 "lon": lon
