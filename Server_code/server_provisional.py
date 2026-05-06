@@ -204,6 +204,10 @@ async def handler(websocket: WebSocketServerProtocol):
                         
                         for resultado in resultados:
                             for caja in resultado.boxes:
+                                conf = float(caja.conf[0])
+                                if conf < 0.6: 
+                                    continue
+                                    
                                 cls_id = int(caja.cls[0])
                                 if cls_id == 0:
                                     objetivo_detectado = True

@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using WebSocketSharp;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -448,16 +448,19 @@ public class DroneWSClient : MonoBehaviour
             // Verificación del tipo de paquete recibido (identificación de alertas)
             if (jsonArray.Count > 0 && jsonArray[0]["type"] != null && jsonArray[0]["type"].ToString() == "alert")
             {
-                if (jsonArray[0]["message"] != null && jsonArray[0]["message"].ToString() == "person_detected")
+                string msg = jsonArray[0]["message"]?.ToString();
+                if (msg == "person_detected" || msg == "animal_detected")
                 {
                     int id = (int)jsonArray[0]["id"];
                     float lat = (float)jsonArray[0]["lat"];
                     float lon = (float)jsonArray[0]["lon"];
                     int droneNum = ((id - 5760) / 10) + 1;
 
+                    string sujeto = msg == "person_detected" ? "a la persona" : "un animal";
+
                     lock (candado)
                     {
-                        mensajeAlertaPendiente = $"🚨 ¡IA del Dron {droneNum} ha detectado a la persona!\nLat: {lat:F6} | Lon: {lon:F6}";
+                        mensajeAlertaPendiente = $"🚨 ¡IA del Dron {droneNum} ha detectado {sujeto}!\nLat: {lat:F6} | Lon: {lon:F6}";
                     }
                 }
                 return; // Finaliza la ejecución para evitar el procesamiento como telemetría general

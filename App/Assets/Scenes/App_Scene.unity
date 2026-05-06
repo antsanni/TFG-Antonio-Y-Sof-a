@@ -752,7 +752,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   line: {fileID: 618063229}
   placeToggle: {fileID: 1237976591}
-  prefabToPlace: {fileID: 7313349644241235163, guid: 85699f6422c4ccc40b78e39a08236f97, type: 3}
+  prefabToPlace: {fileID: 919132149155446097, guid: 07cfd655bf23cbc409ab05c4e0d2d549, type: 3}
   cam: {fileID: 963194227}
   hitMask:
     serializedVersion: 2

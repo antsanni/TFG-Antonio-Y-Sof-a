@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using TMPro;
@@ -48,17 +48,43 @@ public class MissingPerson : MonoBehaviour
                     Destroy(currentPlaced);
 
                 currentPlaced = Instantiate(prefabToPlace, hit.point, Quaternion.identity);
+                currentPlaced.name = prefabToPlace.name; // Mantiene el nombre del prefab sin el "(Clone)"
+                
+                // --- AUTOCORRECCIÓN DE LAYER Y COLLIDER ---
+                // 1. Añadir BoxCollider si el prefab no tiene ninguno
+                if (currentPlaced.GetComponentInChildren<Collider>() == null)
+                {
+                    BoxCollider bc = currentPlaced.AddComponent<BoxCollider>();
+                    bc.size = new Vector3(2f, 2f, 2f);
+                    bc.center = new Vector3(0, 1f, 0);
+                }
+
+                // 2. Asignar la capa correcta automáticamente copiándola de lo que espera el dron
+                Drone dronActivo = FindObjectOfType<Drone>();
+                if (dronActivo != null)
+                {
+                    int mask = dronActivo.layerMissingPerson.value;
+                    int targetLayer = 0;
+                    for (int i = 0; i < 32; i++) {
+                        if ((mask & (1 << i)) != 0) { targetLayer = i; break; }
+                    }
+                    
+                    Transform[] hijos = currentPlaced.GetComponentsInChildren<Transform>(true);
+                    foreach (Transform hijo in hijos) {
+                        hijo.gameObject.layer = targetLayer;
+                    }
+                }
+                // ------------------------------------------
+
                 placeToggle.isOn = false;
                 UpdateTextCoords(hit.point);
             }
         }
     }
 
-    // Convierte posición world a lat/lon y actualiza el texto
-    // Muestra un mensaje de búsqueda en lugar de hacer spoiler de las coordenadas
     private void UpdateTextCoords(Vector3 worldPos)
     {
-        coordsText.text = "🔍 Despliegue completado. Drones iniciando búsqueda de la persona desaparecida...";
+        coordsText.text = "🔍 Despliegue completado. Drones iniciando búsqueda de persona o animal...";
     }
 
     // Comprueba si un punto está dentro de un polígono en XZ
