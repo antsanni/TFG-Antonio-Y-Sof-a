@@ -26,7 +26,7 @@ do
     echo " -> Dron $i listo (En puerto $puerto)"
 
     # Comando que pone todo en marcha en las coordenadas exactas que quieres
-    DISPLAY="" nohup python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f quad --no-mavproxy --instance $i --sysid $(($i+1)) --custom-location=28.760784,-17.747523,0,0 > /dev/null 2>&1 &
+    DISPLAY="" nohup python3 Tools/autotest/sim_vehicle.py -v ArduCopter -f quad --no-mavproxy --instance $i --sysid $(($i+1)) --custom-location=28.761638,-17.741078,0,0 > /dev/null 2>&1 &
 
     sleep 5
 done
