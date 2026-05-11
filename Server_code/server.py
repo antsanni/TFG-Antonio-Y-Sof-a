@@ -1,6 +1,16 @@
 import asyncio
 import json
 import time
+import threading
+import argparse
+import base64
+import numpy as np
+import cv2
+
+import collections
+import collections.abc
+collections.MutableMapping = collections.abc.MutableMapping
+collections.Mapping = collections.abc.Mapping
 
 from websockets.server import WebSocketServerProtocol, serve
 from websockets.exceptions import ConnectionClosed
@@ -8,462 +18,316 @@ from websockets.exceptions import ConnectionClosed
 from dronekit import connect, VehicleMode, LocationGlobal, Command
 from pymavlink import mavutil
 
-# Estado y parámetros globales mínimos
-current_speed = 5.0
-simulated_battery_level = 100.0
-current_mission_index = 0
+print("Cargando modelo YOLOv8...")
+from ultralytics import YOLO
+modelo_yolo = YOLO('yolov8n.pt')
+print("¡Modelo YOLO cargado y listo para buscar personas!")
+# ---------------------------------------------
 
-# Modelo de energía de batería (Wh)
-BATTERY_CELLS = 12
-CELL_NOMINAL_V = 3.7
-BATTERY_CAPACITY_AH = 22.0
+puerto_base = 5760
+PUERTOS = []
+DRONES = []
+clients = set() 
 
-# Valores de respaldo
-V_FALLBACK_NOMINAL = 44.4
-V_CLAMP_MIN = 42.0
-V_CLAMP_MAX = 50.4
+def conectar_vehiculo(puerto):
+    print(f"--- [Hilo {puerto}] Intentando conectar...")
+    connection_string = f"tcp:127.0.0.1:{puerto}"
 
-I_FALLBACK_HOVER  = 18.0
-I_FALLBACK_CRUISE = 25.0
+    try:
+        vehicle = connect(connection_string, wait_ready=True)
+        vehicle.mi_id = puerto
+        vehicle.simulated_battery = 100.0 
+        
+        print(f"[Hilo {puerto}] ¡CONECTADO Y LISTO!")
+        vehicle.parameters["ARMING_CHECK"] = 0
+        DRONES.append(vehicle)
 
-BATTERY_NOMINAL_WH = BATTERY_CELLS * CELL_NOMINAL_V * BATTERY_CAPACITY_AH
-battery_wh_remaining = BATTERY_NOMINAL_WH
+        while True:
+            time.sleep(10)
+    except Exception as e:
+        print(f" [Hilo {puerto}] Error: {e}")
 
-TELEMETRY_DT = 0.2
-USE_NOMINAL_V_IF_NONE = True
-
-# Conexión y configuración inicial del vehículo
-CONN_STR = "udp:0.0.0.0:14550"
-print(f"Conectando con el vehículo en: {CONN_STR}")
-vehicle = connect(CONN_STR, wait_ready=True)
-
-print("Configurando parámetros para control externo completo desde App.")
-while not vehicle.is_armable:
-    time.sleep(0.2)
-vehicle.parameters["TERRAIN_ENABLE"] = 0
-vehicle.parameters["EK3_SRC1_POSZ"] = 3
-vehicle.parameters["EK3_ALT_SOURCE"] = 1
-vehicle.parameters["RNGFND1_TYPE"] = 0
-vehicle.parameters["RNGFND2_TYPE"] = 0
-vehicle.parameters["ARMING_CHECK"] = 0
-vehicle.parameters["WPNAV_SPEED"] = 2000
-time.sleep(0.5)
-print("Parámetros críticos desactivados.")
-
-clients: set[WebSocketServerProtocol] = set()
-
-
-async def telemetry_loop() -> None:
-    """Emite telemetría periódica y simula descarga de batería basada en energía."""
-    global simulated_battery_level, battery_wh_remaining
-
+async def telemetry_loop():
     while True:
-        loc = vehicle.location.global_relative_frame
-        att = vehicle.attitude
-        bat = vehicle.battery
+        paquete_envio = []
+        for dron in DRONES:
+            try:
+                if dron.armed:
+                    # Gasta 0.033 cada tick -> 5 minutos de vuelo
+                    dron.simulated_battery = max(0.0, dron.simulated_battery - 0.033)
 
-        est_time_min = None
-        v = bat.voltage
-        i = bat.current
-        if v is not None and i is not None and v * max(0.0, i) > 1e-6:
-            power_w_now = v * max(0.0, i)
-            est_time_min = (battery_wh_remaining / power_w_now) * 60.0
+                datos = {
+                    "latitud": dron.location.global_relative_frame.lat,
+                    "longitud": dron.location.global_relative_frame.lon,
+                    "altitud": dron.location.global_relative_frame.alt,
+                    "rumbo": dron.heading,
+                    "id": dron.mi_id,
+                    "level": dron.simulated_battery,
+                    "flightMode": dron.mode.name,
+                    "isArmed": dron.armed
+                }
+                paquete_envio.append(datos)
+            except Exception as e:
+                pass 
 
-        payload = json.dumps(
-            {
-                "type": "telemetry",
-                "lat": loc.lat,
-                "lon": loc.lon,
-                "alt": loc.alt,
-                "yaw": att.yaw,
-                "groundspeed": vehicle.groundspeed,
-                "battery": {
-                    "voltage": bat.voltage,
-                    "current": bat.current,
-                    "level": simulated_battery_level,
-                    "energy_wh": battery_wh_remaining,
-                    "eta_min": est_time_min,
-                },
-                "armed": vehicle.armed,
-                "mode": vehicle.mode.name,
-            }
-        )
-
-        if clients:
+        if paquete_envio and clients:
+            envio = json.dumps(paquete_envio)
             await asyncio.gather(
-                *[ws.send(payload) for ws in list(clients) if ws.open],
+                *[ws.send(envio) for ws in list(clients) if ws.open],
                 return_exceptions=True,
             )
 
-        if vehicle.armed:
-            voltage = bat.voltage if bat.voltage is not None else V_FALLBACK_NOMINAL
-            voltage = min(max(voltage, V_CLAMP_MIN), V_CLAMP_MAX)
+        await asyncio.sleep(0.1)
 
-            if bat.current is not None:
-                current = bat.current
-            else:
-                if vehicle.groundspeed < 2.0:   
-                    current = I_FALLBACK_HOVER
-                else:                           
-                    current = I_FALLBACK_CRUISE
-
-            if voltage is not None:
-                power_w = max(0.0, voltage * current)
-                dWh = power_w * TELEMETRY_DT / 3600.0
-                battery_wh_remaining = max(0.0, battery_wh_remaining - dWh)
-                simulated_battery_level = 100.0 * (battery_wh_remaining / BATTERY_NOMINAL_WH)
-
-        await asyncio.sleep(TELEMETRY_DT)
-
-
-async def set_speed(speed: float, ws: WebSocketServerProtocol) -> None:
-    """Ajusta la velocidad de navegación por MAVLink y confirma al cliente."""
-    try:
-        speed = float(speed)
-    except (TypeError, ValueError):
-        await ws.send(json.dumps({"status": "error", "message": "Parámetro 'speed' inválido"}))
-        return
-
-    if not (0.5 <= speed <= 20.0):
-        await ws.send(json.dumps({"status": "error", "message": "Velocidad fuera de rango (0.5 – 20 m/s)."}))
-        return
-
-    global current_speed
-    current_speed = speed
-
-    vehicle._master.mav.command_long_send(
-        vehicle._master.target_system,
-        vehicle._master.target_component,
-        mavutil.mavlink.MAV_CMD_DO_CHANGE_SPEED,
-        0,
-        1,
-        speed,
-        -1,
-        0,
-        0,
-        0,
-        0,
-    )
-
-    await ws.send(json.dumps({"status": "success", "message": f"Velocidad ajustada a {speed:.1f} m/s"}))
-
-
-async def relaunch_mission() -> None:
-    """Relanza la misión desde el último índice guardado tras recarga/despegue si procede."""
-    print("🔄 Relanzando misión tras carga...")
-
-    cmds = vehicle.commands
-    cmds.download()
-    cmds.wait_ready()
-
-    if cmds.count == 0:
-        print("⚠ No hay misión para relanzar.")
-        return
-
+async def ejecutar_rtl_desde_suelo(vehicle, altitud_despegue=20.0):
+    print(f"[Dron {vehicle.mi_id}] RTL en suelo. Armando y subiendo...")
     vehicle.mode = VehicleMode("GUIDED")
-    while vehicle.mode.name != "GUIDED":
-        await asyncio.sleep(0.1)
-
-    if not vehicle.armed:
-        print("✅ Armando motores para continuar misión...")
-        vehicle.armed = True
-        for _ in range(50):
-            if vehicle.armed:
-                break
-            await asyncio.sleep(0.2)
-        else:
-            print("❌ No se pudo armar el dron.")
-            return
-
-    if vehicle.location.global_relative_frame.alt < 1.0:
-        target_alt = cmds[vehicle.commands.next].z
-        print(f"🚀 Despegando hasta {target_alt} m...")
-        vehicle.simple_takeoff(target_alt)
-        while vehicle.location.global_relative_frame.alt < target_alt * 0.95:
-            await asyncio.sleep(0.5)
-
-    vehicle.commands.next = current_mission_index
-    vehicle._master.mav.mission_set_current_send(
-        vehicle._master.target_system,
-        vehicle._master.target_component,
-        current_mission_index,
-    )
-    vehicle._master.mav.command_long_send(
-        vehicle._master.target_system,
-        vehicle._master.target_component,
-        mavutil.mavlink.MAV_CMD_MISSION_START,
-        0,
-        current_mission_index,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-    )
-    vehicle._master.mav.command_long_send(
-        vehicle._master.target_system,
-        vehicle._master.target_component,
-        mavutil.mavlink.MAV_CMD_DO_CHANGE_SPEED,
-        0,
-        1,
-        current_speed,
-        -1,
-        0,
-        0,
-        0,
-        0,
-    )
-
-    vehicle.mode = VehicleMode("AUTO")
-    while vehicle.mode.name != "AUTO":
-        await asyncio.sleep(0.1)
-
-    print("✅ Misión relanzada.")
-
-
-async def set_home(lat: float, lon: float, alt: float, ws: WebSocketServerProtocol) -> None:
-    """Establece una nueva base (home) vía MAVLink y sincroniza el valor local."""
-    try:
-        lat = float(lat)
-        lon = float(lon)
-        alt = float(alt)
-    except (TypeError, ValueError):
-        await ws.send(json.dumps({"status": "error", "message": "Parámetros de home inválidos"}))
-        return
-
-    try:
-        vehicle._master.mav.command_long_send(
-            vehicle._master.target_system,
-            vehicle._master.target_component,
-            mavutil.mavlink.MAV_CMD_DO_SET_HOME,
-            0,
-            1,
-            0,
-            0,
-            0,
-            lat,
-            lon,
-            alt,
-        )
-        vehicle.home_location = LocationGlobal(lat, lon, alt)
-        await ws.send(json.dumps({"status": "success", "message": "Nueva base establecida", "home": {"lat": lat, "lon": lon, "alt": alt}}))
-    except Exception as e:
-        await ws.send(json.dumps({"status": "error", "message": f"Error al fijar la base: {e}"}))
-
-
-async def upload_mission_takeoff_guided(wps: list[dict], ws: WebSocketServerProtocol) -> None:
-    """Carga waypoints, despega en GUIDED y arranca la misión en AUTO."""
-    if not wps:
-        await ws.send(json.dumps({"status": "error", "message": "Waypoints vacíos"}))
-        return
-    if len(wps) > 650:
-        await ws.send(json.dumps({"status": "error", "message": "Máx. 650 waypoints"}))
-        return
-
-    if vehicle.mode.name != "GUIDED":
-        vehicle.mode = VehicleMode("GUIDED")
-        while vehicle.mode.name != "GUIDED":
-            await asyncio.sleep(0.1)
-
-    cmds = vehicle.commands
-    cmds.clear()
-    cmds.upload()
-    await asyncio.sleep(0.5)
-    cmds.clear()
-    cmds.upload()
-    await asyncio.sleep(0.5)
-
-    for _ in range(10):
-        cmds.download()
-        cmds.wait_ready()
-        if cmds.count == 0:
-            break
-        print(f"Esperando limpieza: aún hay {cmds.count} comandos")
-        await asyncio.sleep(0.5)
-    else:
-        await ws.send(json.dumps({"status": "error", "message": "No se pudo limpiar la misión anterior correctamente."}))
-        return
-
-    for wp in wps:
-        cmds.add(
-            Command(
-                0,
-                0,
-                0,
-                mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT,
-                mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
-                0,
-                1,
-                0,
-                0,
-                0,
-                0,
-                wp["lat"],
-                wp["lon"],
-                wp["alt"],
-            )
-        )
-    cmds.upload()
-
-    while not vehicle.is_armable:
-        await asyncio.sleep(0.2)
-
-    print(f"DEBUG: WPNAV_SPEED actual: {vehicle.parameters['WPNAV_SPEED']} cm/s")
-    print("Armando motores...")
     vehicle.armed = True
 
-    arm_timeout = 10
-    for _ in range(int(arm_timeout / TELEMETRY_DT)):
-        if vehicle.armed:
+    while not vehicle.armed:
+        await asyncio.sleep(1)
+
+    if hasattr(vehicle, 'mi_base_guardada'):
+        lat, lon = vehicle.mi_base_guardada
+        vehicle._master.mav.command_long_send(
+            vehicle._master.target_system, vehicle._master.target_component,
+            mavutil.mavlink.MAV_CMD_DO_SET_HOME, 0, 0, 0, 0, 0, lat, lon, 0
+        )
+
+    vehicle.simple_takeoff(altitud_despegue)
+
+    while True:
+        alt_actual = vehicle.location.global_relative_frame.alt
+        if alt_actual >= altitud_despegue * 0.95:
             break
-        await asyncio.sleep(TELEMETRY_DT)
-    else:
-        await ws.send(json.dumps({"status": "error", "message": "No se pudo armar el dron tras cargar el terreno."}))
-        return
+        await asyncio.sleep(1)
 
-    target_alt = wps[0]["alt"]
-    already_airborne = vehicle.armed and vehicle.location.global_relative_frame.alt > 1.0
+    vehicle.mode = VehicleMode("RTL")
+    print(f"[Dron {vehicle.mi_id}] Volviendo a la base...")
 
-    if not already_airborne:
-        print("Iniciando despegue...")
-        vehicle.simple_takeoff(target_alt)
-        while vehicle.location.global_relative_frame.alt < target_alt * 0.95:
-            await asyncio.sleep(0.5)
-    else:
-        print("El dron ya está en el aire. Se omite el despegue.")
+async def ejecutar_mision(vehicle, altitud_despegue=20.0):
+    print(f"[Dron {vehicle.mi_id}] Preparando para misión. Cambiando a GUIDED...")
+    vehicle.mode = VehicleMode("GUIDED")
+    vehicle.armed = True
 
-    vehicle.commands.next = 0
-    vehicle._master.mav.mission_set_current_send(
-        vehicle._master.target_system,
-        vehicle._master.target_component,
-        0,
-    )
-    vehicle._master.mav.command_long_send(
-        vehicle._master.target_system,
-        vehicle._master.target_component,
-        mavutil.mavlink.MAV_CMD_MISSION_START,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-    )
-    vehicle._master.mav.command_long_send(
-        vehicle._master.target_system,
-        vehicle._master.target_component,
-        mavutil.mavlink.MAV_CMD_DO_CHANGE_SPEED,
-        0,
-        1,
-        current_speed,
-        -1,
-        0,
-        0,
-        0,
-        0,
-    )
+    while not vehicle.armed:
+        await asyncio.sleep(1)
+
+    if hasattr(vehicle, 'mi_base_guardada'):
+        lat, lon = vehicle.mi_base_guardada
+        vehicle._master.mav.command_long_send(
+            vehicle._master.target_system, vehicle._master.target_component,
+            mavutil.mavlink.MAV_CMD_DO_SET_HOME, 0, 0, 0, 0, 0, lat, lon, 0
+        )
+
+    print(f"[Dron {vehicle.mi_id}] ¡Armado! Iniciando despegue a {altitud_despegue}m...")
+    vehicle.simple_takeoff(altitud_despegue)
+
+    while True:
+        alt_actual = vehicle.location.global_relative_frame.alt
+        if alt_actual >= altitud_despegue * 0.95:
+            print(f"[Dron {vehicle.mi_id}] Altitud alcanzada.")
+            break
+        await asyncio.sleep(1)
 
     vehicle.mode = VehicleMode("AUTO")
-    while vehicle.mode.name != "AUTO":
-        await asyncio.sleep(0.1)
 
-    await ws.send(
-        json.dumps(
-            {
-                "status": "success",
-                "message": f"Despegue completado a {target_alt} m; misión de {len(wps)} WPs en ejecución (AUTO)",
-            }
+async def ejecutar_resume(vehicle, altitud_despegue=20.0):
+    print(f"[Dron {vehicle.mi_id}] Reanudando misión. Preparando despegue...")
+    vehicle.mode = VehicleMode("GUIDED")
+    vehicle.armed = True
+
+    while not vehicle.armed:
+        await asyncio.sleep(1)
+
+    if hasattr(vehicle, 'mi_base_guardada'):
+        lat, lon = vehicle.mi_base_guardada
+        vehicle._master.mav.command_long_send(
+            vehicle._master.target_system, vehicle._master.target_component,
+            mavutil.mavlink.MAV_CMD_DO_SET_HOME, 0, 0, 0, 0, 0, lat, lon, 0
         )
-    )
+
+    print(f"[Dron {vehicle.mi_id}] Armado. Subiendo a {altitud_despegue}m para continuar...")
+    vehicle.simple_takeoff(altitud_despegue)
+
+    while True:
+        alt_actual = vehicle.location.global_relative_frame.alt
+        if alt_actual >= altitud_despegue * 0.95:
+            break
+        await asyncio.sleep(1)
+
+    if hasattr(vehicle, 'wp_guardado'):
+        wp_a_retomar = max(1, vehicle.wp_guardado)
+        vehicle.commands.next = wp_a_retomar
+        print(f"[Dron {vehicle.mi_id}] 📖 Retomando misión desde el punto {wp_a_retomar}...")
+    
+    print(f"[Dron {vehicle.mi_id}] Cambiando a AUTO.")
+    vehicle.mode = VehicleMode("AUTO")
 
 
-def get_status() -> dict:
-    """Entrega el estado básico del vehículo para consultas puntuales."""
-    loc = vehicle.location.global_relative_frame
-    bat = vehicle.battery
-    return {
-        "location": {"lat": loc.lat, "lon": loc.lon, "alt": loc.alt},
-        "battery": {"voltage": bat.voltage, "current": bat.current, "level": simulated_battery_level},
-        "mode": vehicle.mode.name,
-        "armed": vehicle.armed,
-    }
-
-
-async def handler(ws: WebSocketServerProtocol) -> None:
-    """Gestiona los mensajes del cliente y ejecuta los comandos solicitados."""
-    global current_mission_index, simulated_battery_level, battery_wh_remaining
-    clients.add(ws)
+async def handler(websocket: WebSocketServerProtocol):
+    clients.add(websocket)
+    print("🟢 Unity conectado. Esperando comandos...")
+    
     try:
-        async for message in ws:
-            print("📥 Recibido mensaje:", message)
+        async for message in websocket:
             try:
                 data = json.loads(message)
             except json.JSONDecodeError:
-                await ws.send(json.dumps({"status": "error", "message": "JSON inválido"}))
                 continue
 
             cmd = data.get("command")
-            if cmd == "upload_mission":
-                await upload_mission_takeoff_guided(data.get("waypoints", []), ws)
+            drone_id = data.get("id")
+
+            target_drone = next((d for d in DRONES if d.mi_id == drone_id), None)
+            if target_drone is None:
+                continue
+
+            # --- NUEVO COMANDO: VISIÓN ARTIFICIAL ---
+            if cmd == "process_image":
+                imagen_base64 = data.get("image")
+                if imagen_base64:
+                    try:
+                        # 1. Convertimos el texto (Base64) a una imagen real de OpenCV
+                        img_bytes = base64.b64decode(imagen_base64)
+                        img_np = np.frombuffer(img_bytes, dtype=np.uint8)
+                        frame = cv2.imdecode(img_np, cv2.IMREAD_COLOR)
+
+                        # 2. Le pasamos la imagen a YOLO
+                        # verbose=False es para que no llene la consola de texto en cada frame
+                        resultados = modelo_yolo(frame, verbose=False)
+
+                        # 3. Comprobamos si hay alguna persona o fauna (Clase 0 = person, 14-23 = fauna en COCO)
+                        clases_fauna = [14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+                        objetivo_detectado = False
+                        tipo_detectado = ""
+                        
+                        for resultado in resultados:
+                            for caja in resultado.boxes:
+                                conf = float(caja.conf[0])
+                                if conf < 0.6: 
+                                    continue
+                                    
+                                cls_id = int(caja.cls[0])
+                                if cls_id == 0:
+                                    objetivo_detectado = True
+                                    tipo_detectado = "PERSONA"
+                                    break
+                                elif cls_id in clases_fauna:
+                                    objetivo_detectado = True
+                                    tipo_detectado = "FAUNA"
+                                    break
+
+                        # 4. Si hay una persona o fauna, avisamos
+                        if objetivo_detectado:
+                            lat = target_drone.location.global_relative_frame.lat
+                            lon = target_drone.location.global_relative_frame.lon
+                            
+                            print(f"🚨 [Dron {drone_id}] ¡{tipo_detectado} DETECTADA en Lat: {lat}, Lon: {lon}!")
+                            
+                            # (Opcional por ahora) Le mandamos un chivatazo a Unity
+                            mensaje_alerta = "person_detected" if tipo_detectado == "PERSONA" else "animal_detected"
+                            alerta = json.dumps([{
+                                "type": "alert",
+                                "message": mensaje_alerta,
+                                "id": drone_id,
+                                "lat": lat,
+                                "lon": lon
+                            }])
+                            await websocket.send(alerta)
+
+                    except Exception as e:
+                        print(f"Error procesando imagen: {e}")
+            # ----------------------------------------
+
+            elif cmd == "return_to_launch":
+                if hasattr(target_drone, 'commands'):
+                    target_drone.wp_guardado = target_drone.commands.next
+                    print(f"[Dron {drone_id}] 🔖 Batería baja. Guardando progreso en el punto: {target_drone.wp_guardado}")
+
+                if not target_drone.armed or target_drone.location.global_relative_frame.alt < 2.0:
+                    asyncio.create_task(ejecutar_rtl_desde_suelo(target_drone, 20.0))
+                else:
+                    if hasattr(target_drone, 'mi_base_guardada'):
+                        lat, lon = target_drone.mi_base_guardada
+                        target_drone._master.mav.command_long_send(
+                            target_drone._master.target_system, target_drone._master.target_component,
+                            mavutil.mavlink.MAV_CMD_DO_SET_HOME, 0, 0, 0, 0, 0, lat, lon, 0
+                        )
+                    target_drone.mode = VehicleMode("RTL")
+                    print(f"[Dron {drone_id}] Ejecutando RTL normal para ir a recargar")
 
             elif cmd == "set_speed":
                 speed = data.get("speed")
                 if speed is not None:
-                    await set_speed(speed, ws)
-                else:
-                    await ws.send(json.dumps({"status": "error", "message": "Parámetro 'speed' obligatorio"}))
-
-            elif cmd == "return_to_launch":
-                current_mission_index = vehicle.commands.next
-                vehicle.mode = VehicleMode("RTL")
-                await ws.send(json.dumps({"status": "success", "message": "Regresando a casa"}))
+                    target_drone._master.mav.command_long_send(
+                        target_drone._master.target_system, target_drone._master.target_component,
+                        mavutil.mavlink.MAV_CMD_DO_CHANGE_SPEED, 0, 1, float(speed), -1, 0, 0, 0, 0,
+                    )
 
             elif cmd == "set_home":
                 lat, lon = data.get("lat"), data.get("lon")
-                alt = data.get("alt", 0)
                 if lat is not None and lon is not None:
-                    await set_home(lat, lon, alt, ws)
-                else:
-                    await ws.send(json.dumps({"status": "error", "message": "Parámetros 'lat' y 'lon' obligatorios"}))
+                    target_drone.mi_base_guardada = (float(lat), float(lon))
+                    target_drone._master.mav.command_long_send(
+                        target_drone._master.target_system,
+                        target_drone._master.target_component,
+                        mavutil.mavlink.MAV_CMD_DO_SET_HOME,
+                        0, 0, 0, 0, 0, float(lat), float(lon), 0,
+                    )
+                    target_drone.home_location = LocationGlobal(float(lat), float(lon), 0)
+                    print(f"[Dron {drone_id}] 🏠 Base fijada y guardada en {lat}, {lon}")
 
             elif cmd == "set_battery_level":
                 level = data.get("level")
                 if level is not None:
-                    simulated_battery_level = float(level)
-                    battery_wh_remaining = BATTERY_NOMINAL_WH * (simulated_battery_level / 100.0)
-                    await ws.send(json.dumps({"status": "success", "message": f"Nivel de batería simulado: {level}%"}))
-                else:
-                    await ws.send(json.dumps({"status": "error", "message": "Falta el parámetro 'level'"}))
+                    target_drone.simulated_battery = float(level)
+
+            elif cmd == "upload_mission":
+                wps = data.get("waypoints", [])
+                cmds = target_drone.commands
+                cmds.clear()
+                for wp in wps:
+                    cmds.add(Command(0, 0, 0, mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT, 0, 0, 0, 0, 0, 0, wp.get("lat"), wp.get("lon"), wp.get("alt")))
+                cmds.upload()
+
+            elif cmd == "start_mission":
+                asyncio.create_task(ejecutar_mision(target_drone, 20.0))
 
             elif cmd == "resume_mission":
-                await relaunch_mission()
-                await ws.send(json.dumps({"status": "success", "message": "Misión reanudada"}))
+                print(f"[Dron {drone_id}] Orden de REANUDAR recibida tras la recarga.")
+                asyncio.create_task(ejecutar_resume(target_drone, 20.0))
 
-            elif cmd == "get_status":
-                await ws.send(json.dumps({"status": "success", "data": get_status()}))
-
-            else:
-                await ws.send(json.dumps({"status": "error", "message": "Comando no reconocido"}))
     except ConnectionClosed:
-        pass
+        print("🔴 Unity desconectado.")
     finally:
-        clients.discard(ws)
-
+        clients.discard(websocket)
 
 async def main() -> None:
-    """Arranca el servidor WebSocket y el bucle de telemetría."""
+    print("---- LANZANDO HILOS DE CONEXION ----")
+    for puerto in PUERTOS:
+        hilo = threading.Thread(target=conectar_vehiculo, args=(puerto,), daemon=True)
+        hilo.start()
+
+    print("---- ARRANCANDO EL SERVIDOR WEBSOCKET ----")
     async with serve(handler, "0.0.0.0", 8765):
         print("Servidor WebSocket en ws://0.0.0.0:8765")
         asyncio.create_task(telemetry_loop())
-        await asyncio.Future()
-
+        await asyncio.Future() 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Servidor de drones")
+    parser.add_argument("-n", "--numero", type=int, help="Numero de drones que quieres utilizar", default=1)
+    args = parser.parse_args()
+
+    for i in range(args.numero):
+        PUERTOS.append(puerto_base + (i * 10))
+
     try:
         asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
     finally:
-        print("Cerrando la conexión con el vehículo…")
-        vehicle.close()
+        for dron in DRONES:
+            dron.close()
+        print("¡Todo cerrado!")
