@@ -722,4 +722,16 @@ public class DroneWSClient : MonoBehaviour
 
     }
 
+    /// <summary>
+    /// Getter de los datos de telemetría (incluye latitud y longitud) del dron
+    /// </summary>
+    public DroneData GetDroneData(int droneId)
+    {
+        if (ultimaDataDrones.ContainsKey(droneId))
+        {
+            return ultimaDataDrones[droneId];
+        }
+        return null;
+    }
+
 }

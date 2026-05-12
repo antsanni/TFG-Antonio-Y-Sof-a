@@ -128,8 +128,19 @@ public class Drone : MonoBehaviour
             bool isAnimal = n.Contains("animal") || n.Contains("dog") || n.Contains("wolf") || n.Contains("perro") || n.Contains("lobo");
             
             int droneNum = ((droneController.myId - 5760) / 10) + 1;
-            string msjBanner = isAnimal ? $"¡Dron {droneNum} detectó al Animal!" : $"¡Dron {droneNum} detectó a la Persona!";
-            string msjGeneral = isAnimal ? $"✅ ¡El Dron {droneNum} ha encontrado físicamente al Animal!" : $"✅ ¡El Dron {droneNum} ha encontrado físicamente a la Persona!";
+
+            string coordsStr = "";
+            if (droneController.wsClient != null)
+            {
+                var data = droneController.wsClient.GetDroneData(droneController.myId);
+                if (data != null)
+                {
+                    coordsStr = $" en Lat: {data.latitud:F6},  Lon: {data.longitud:F6}";
+                }
+            }
+
+            string msjBanner = isAnimal ? $"El Dron {droneNum} encontró al animal{coordsStr}" : $"El Dron {droneNum} encontró a la persona{coordsStr}";
+            string msjGeneral = isAnimal ? $"✅ El Dron {droneNum} encontró al animal{coordsStr}" : $"✅ El Dron {droneNum} encontró a la persona{coordsStr}";
             
             Debug.Log(msjGeneral);
             ShowFoundBanner(msjBanner);
