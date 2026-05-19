@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -8,7 +8,7 @@ public class Drone : MonoBehaviour
     public Transform visionCone;
     public LayerMask layerMallaModificable;
     public LayerMask layerMissingPerson;
-    public DroneWSClient droneWSClient;
+    private DroneController droneController;
 
     public Color colorMarcado = new Color(0f, 0f, 1f, 0.4f);
     public bool camara_status = true;
@@ -29,6 +29,7 @@ public class Drone : MonoBehaviour
 
     private void Start()
     {
+        droneController = GetComponent<DroneController>();
         reportedTarget = null;
 
         if (visionCone != null)
@@ -122,26 +123,48 @@ public class Drone : MonoBehaviour
                 detectado = c.gameObject;
         }
 
-        if (detectado != null && detectado != reportedTarget)
-        {
-            Debug.Log("Missing person Found!");
-            ShowFoundBanner();
-            reportedTarget = detectado;
+        if (detectado != null && detectado != reportedTarget) {
+            string n = detectado.transform.root.name.ToLower();
+            bool isAnimal = n.Contains("animal") || n.Contains("dog") || n.Contains("wolf") || n.Contains("perro") || n.Contains("lobo");
+            
+            int droneNum = ((droneController.myId - 5760) / 10) + 1;
 
-            if (droneWSClient != null &&
-                droneWSClient.isArmed &&
-                droneWSClient.altitude > 2f &&
-                droneWSClient.flightMode != "RTL")
+            string coordsStr = "";
+            if (droneController.wsClient != null)
             {
-                droneWSClient.SendReturnToLaunch();
+                var data = droneController.wsClient.GetDroneData(droneController.myId);
+                if (data != null)
+                {
+                    coordsStr = $" en Lat: {data.latitud:F6},  Lon: {data.longitud:F6}";
+                }
             }
+
+            string msjBanner = isAnimal ? $"El Dron {droneNum} encontró al animal{coordsStr}" : $"El Dron {droneNum} encontró a la persona{coordsStr}";
+            string msjGeneral = isAnimal ? $"✅ El Dron {droneNum} encontró al animal{coordsStr}" : $"✅ El Dron {droneNum} encontró a la persona{coordsStr}";
+            
+            Debug.Log(msjGeneral);
+            ShowFoundBanner(msjBanner);
+
+            MissingPerson mp = FindObjectOfType<MissingPerson>();
+            if (mp != null && mp.coordsText != null) {
+                mp.coordsText.text = msjGeneral;
+            }
+
+            reportedTarget = detectado;
+            droneController.wsClient.SendReturnToLaunch();
         }
     }
 
-    // Muestra un banner en la interfaz cuando se detecta una persona
-    private void ShowFoundBanner()
+    // Muestra un banner en la interfaz cuando se detecta una persona/animal
+    private void ShowFoundBanner(string mensaje)
     {
         if (foundBanner == null) return;
+
+        TextMeshProUGUI textoBanner = foundBanner.GetComponentInChildren<TextMeshProUGUI>();
+        if (textoBanner != null)
+        {
+            textoBanner.text = mensaje;
+        }
 
         if (bannerRoutine != null)
             StopCoroutine(bannerRoutine);
