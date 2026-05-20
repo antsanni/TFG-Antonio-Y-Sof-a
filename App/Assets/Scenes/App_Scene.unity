@@ -456,7 +456,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: 'Heat signal detected! Possible person found at lat: XX lon: YY'
+  m_text: 
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
@@ -483,7 +483,7 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 23.4
+  m_fontSize: 23.1
   m_fontSizeBase: 23.1
   m_fontWeight: 400
   m_enableAutoSizing: 1
@@ -752,7 +752,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   line: {fileID: 618063229}
   placeToggle: {fileID: 1237976591}
-  prefabToPlace: {fileID: 919132149155446097, guid: 07cfd655bf23cbc409ab05c4e0d2d549, type: 3}
+  prefabToPlace: {fileID: 919132149155446097, guid: 4350b309aa35d8241b5a918441629bdc, type: 3}
   cam: {fileID: 963194227}
   hitMask:
     serializedVersion: 2
@@ -761,6 +761,7 @@ MonoBehaviour:
   droneWSClient: {fileID: 1158412477}
   map: {fileID: 2141470261}
   coordsText: {fileID: 258823576}
+  coordsTextBg: {fileID: 1439582439}
 --- !u!4 &279530462
 Transform:
   m_ObjectHideFlags: 0
@@ -793,7 +794,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &466451476
 RectTransform:
   m_ObjectHideFlags: 0
@@ -2757,7 +2758,7 @@ RectTransform:
   m_Father: {fileID: 534732730}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
-  m_AnchorMax: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 1}
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 10, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
@@ -2956,7 +2957,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1284259321
 RectTransform:
   m_ObjectHideFlags: 0
@@ -3350,7 +3351,7 @@ RectTransform:
   m_Father: {fileID: 2059694501}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
-  m_AnchorMax: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 1}
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 20, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
@@ -3619,7 +3620,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1439582440
 RectTransform:
   m_ObjectHideFlags: 0
@@ -3990,7 +3991,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1522158405
 RectTransform:
   m_ObjectHideFlags: 0
