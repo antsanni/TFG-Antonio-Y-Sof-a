@@ -21,6 +21,7 @@ public class MissingPerson : MonoBehaviour
 
     [Header("UI")]
     public TMP_Text coordsText;
+    public GameObject coordsTextBg;
 
     private Vector3[] verts;
     private GameObject currentPlaced;
@@ -82,9 +83,9 @@ public class MissingPerson : MonoBehaviour
         }
     }
 
-    private void UpdateTextCoords(Vector3 worldPos)
-    {
-        coordsText.text = "🔍 Despliegue completado. Drones iniciando búsqueda de persona o animal...";
+    private void UpdateTextCoords(Vector3 worldPos) {
+        coordsTextBg.SetActive(true);
+        coordsText.text = "Objetivo esperando a ser encontrado";
     }
 
     // Comprueba si un punto está dentro de un polígono en XZ
