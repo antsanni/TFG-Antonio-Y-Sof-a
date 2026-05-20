@@ -1,7 +1,8 @@
 # Sistema Multidron con IA y Gemelo Digital en 3D para Operaciones de Salvamento
 
-Este repositorio contiene el material asociado al Trabajo de Fin de Grado de **Antonio y Sofía** 
-(Grado en Desarrollo de Videojuegos · Facultad de Informática · UCM).
+Este repositorio contiene el material asociado al Trabajo de Fin de Grado de:
+- **Antonio** (Grado en Ingeniería de Computadores · Facultad de Informática · UCM)
+- **Sofía** (Grado en Desarrollo de Videojuegos · Facultad de Informática · UCM)
 
 El repositorio incluye el **proyecto completo**, abarcando el gemelo digital en Unity, el servidor de Inteligencia Artificial (basado en YOLO para detección de personas y animales), y los scripts de simulación física del enjambre de drones.
 
@@ -15,8 +16,6 @@ El repositorio incluye el **proyecto completo**, abarcando el gemelo digital en 
 - **`Simulator_code/`** ← 🧪 Integración con ArduPilot SITL / DroneKit (Scripts y utilidades).
 - **`lanzar_drones.sh`** ← 🚀 Script en bash (para Ubuntu/WSL) que inicializa las instancias de los drones físicos simulados.
 - **`Manual_Ejecucion.md`** ← 📖 **Manual paso a paso** para arrancar todos los componentes del sistema.
-- **`Imgs_Memoria/`** y **`imagenes/`** ← 🖼️ Imágenes, diagramas y capturas utilizadas para la redacción de la Memoria del TFG.
-- **`Memoria_TFG.pdf`** ← 📄 Documento final de la memoria del proyecto.
 
 ---
 
