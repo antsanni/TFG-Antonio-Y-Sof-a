@@ -1,78 +1,53 @@
-# Herramienta de Simulación 3D para Patrulla Autónoma con Dron en Operaciones de Salvamento
+# Sistema Multidron con IA y Gemelo Digital en 3D para Operaciones de Salvamento
 
-Este repositorio contiene el material asociado al Trabajo de Fin de Grado de 
+Este repositorio contiene el material asociado al Trabajo de Fin de Grado de **Antonio y Sofía** 
 (Grado en Desarrollo de Videojuegos · Facultad de Informática · UCM).
 
-El repositorio fue concebido inicialmente como **referencia técnica aislada** de scripts y componentes clave.
-Actualmente incluye también la **aplicación completa en Unity**, permitiendo su análisis, ejecución y reutilización.
+El repositorio incluye el **proyecto completo**, abarcando el gemelo digital en Unity, el servidor de Inteligencia Artificial (basado en YOLO para detección de personas y animales), y los scripts de simulación física del enjambre de drones.
 
 ---
 
 ## 📂 Estructura del repositorio
 
-+---App/ ← ✅ Proyecto completo de Unity 
-
-+---App_code/ ← 📎 Scripts principales extraídos (versión compacta para consulta)
-| BatteryManager.cs
-| CameraController.cs
-| Drone.cs
-| ...
-
-+---Server_code/ ← 🛰️ Servidor WebSocket (Python)
-| server.py
-| connection_test.py
-| execute_server.txt
-
----Simulator_code/ ← 🧪 Integración con DroneKit-SITL / ArduPilot
-setup_commands.txt
-launch_dronekit.ps1
+- **`App/`** ← ✅ **Proyecto completo de Unity** (Gemelo Digital y UI).
+- **`App_code/`** ← 📎 Scripts principales de Unity extraídos (versión compacta para consulta rápida).
+- **`Server_code/`** ← 🛰️ **Servidor Central e IA (Python)**. Coordina el enjambre por WebSocket y ejecuta los modelos YOLO.
+- **`Simulator_code/`** ← 🧪 Integración con ArduPilot SITL / DroneKit (Scripts y utilidades).
+- **`lanzar_drones.sh`** ← 🚀 Script en bash (para Ubuntu/WSL) que inicializa las instancias de los drones físicos simulados.
+- **`Manual_Ejecucion.md`** ← 📖 **Manual paso a paso** para arrancar todos los componentes del sistema.
+- **`Imgs_Memoria/`** y **`imagenes/`** ← 🖼️ Imágenes, diagramas y capturas utilizadas para la redacción de la Memoria del TFG.
+- **`Memoria_TFG.pdf`** ← 📄 Documento final de la memoria del proyecto.
 
 ---
 
 ## 🔧 Componentes principales
 
-### ✅ `App/` – Aplicación Unity completa
-
+### ✅ `App/` – Gemelo Digital en Unity (Frontend)
 Contiene el proyecto íntegro de Unity listo para abrir con:
+- **Unity 2022.3 LTS** o superior.
+- **Plugin Mapbox para Unity**.
+Representa en tiempo real la telemetría del enjambre, baterías, rutas de barrido y detecciones enviadas por la IA.
 
-- **Unity 2022.3 LTS** o superior  
-- **Plugin Mapbox para Unity**
+### 🛰️ `Server_code/` – Servidor Central e IA (Backend)
+Núcleo desarrollado en Python. Se encarga de:
+- Conectarse mediante MAVLink a los drones simulados.
+- Procesar el feed de las cámaras simuladas con Inteligencia Artificial (**YOLO**) para identificar personas o animales extraviados.
+- Levantar el servidor WebSocket (`server.py`) para comunicarse en tiempo real con Unity.
 
-Incluye escenas, prefabs, scripts y materiales originales del simulador 3D.
-
----
-
-### 📎 `App_code/` – Scripts C# en versión simplificada
-
-Incluye únicamente los scripts clave del proyecto para facilitar su consulta sin necesidad de abrir Unity.
-
-Ejemplos:
-
-| Categoría | Scripts |
-|-----------|------------------------------|
-| 🛰️ Control del dron | `Drone.cs`, `DroneWSClient.cs`, `RouteManager.cs` |
-| 🔋 Energía y batería | `BatteryManager.cs` |
-| 📍 Generación de rutas | `ZoneSelector.cs`, `ZoneProgressManager.cs` |
-| 🎮 Interfaz y cámara | `CameraController.cs`, `IconsLayer.cs`, etc. |
+### 🧪 Simulación del Enjambre (ArduPilot / SITL)
+Mediante el script `lanzar_drones.sh`, se despliegan de forma programática las instancias de vehículos aéreos simulados, que emiten su telemetría y escuchan comandos como si fueran vehículos físicos reales.
 
 ---
 
-### 🛰️ `Server_code/` – Servidor WebSocket en Python
+## 🚀 Ejecución del Sistema
 
-| Archivo | Descripción |
-|---------|-------------|
-| `server.py` | Núcleo del servidor: gestiona telemetría y comandos |
-| `connection_test.py` | Prueba rápida de comunicación |
-| `execute_server.txt` | Instrucciones para ejecución en entorno virtual (equivalente a `.bat`) |
+Para levantar el sistema completo, los módulos deben arrancarse en el siguiente orden:
 
----
+1. **Simulación de Drones (SITL):** Ejecutar `./lanzar_drones.sh` en un entorno Ubuntu/WSL.
+2. **Servidor IA:** Ejecutar `python server.py` dentro de la carpeta `Server_code`.
+3. **Gemelo Digital Unity:** Abrir el proyecto en la carpeta `App` y pulsar *Play* en el editor.
 
-### 🧪 `Simulator_code/` – Integración con DroneKit-SITL / ArduPilot
-
-| Archivo | Uso |
-|---------|-----|
-| `setup_commands.txt` | Script `.sh` para Linux (WSL recomendado) |
-| `launch_dronekit.ps1` | Lanzador PowerShell para Windows |
+> Para más detalles y requisitos de configuración, consultar el archivo [**Manual_Ejecucion.md**](Manual_Ejecucion.md).
 
 ---
 
@@ -80,13 +55,13 @@ Ejemplos:
 
 | Componente | Requisito |
 |------------|----------|
-| **Aplicación Unity** | Unity 2022.3 LTS + Plugin Mapbox |
-| **Servidor Python** | Python 3.10+ con `dronekit`, `websockets` |
-| **Simulador** | DroneKit-SITL + ArduPilot (Linux / WSL en Windows) |
+| **Gemelo Digital (App)** | Unity 2022.3 LTS + Plugin Mapbox |
+| **Servidor / IA** | Python 3.10+ (dependencias como `dronekit`, `websockets`, modelo YOLO) |
+| **Simulador** | Entorno Ubuntu (nativo o WSL en Windows) con ArduPilot instalado |
 
 ---
 
 ## 📜 Licencia / Uso
 
 Este repositorio se distribuye exclusivamente con fines **académicos y de investigación**.  
-Para consultas, mejoras o reutilización en otros proyectos, contactar con el autor.
+Para consultas, mejoras o reutilización en otros proyectos, contactar con los autores.
