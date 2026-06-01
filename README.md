@@ -8,6 +8,13 @@ El repositorio incluye el **proyecto completo**, abarcando el gemelo digital en 
 
 ---
 
+## 🎥 Vídeo de Demostración
+
+Puedes ver una demostración del sistema en funcionamiento en el siguiente enlace:
+[**Ver Vídeo de Demostración**](https://youtu.be/pPDA59K-KQs)
+
+---
+
 ## 📂 Estructura del repositorio
 
 - **`App/`** ← ✅ **Proyecto completo de Unity** (Gemelo Digital y UI).
